@@ -108,9 +108,9 @@ public final class Target_sun_misc_Unsafe {
 
         ObjectKlass k = null;
         try {
-            k = meta.getRegistries().defineKlass(env, null, bytes, hostKlass.getDefiningClassLoader(), info);
+            k = env.getRegistries().defineKlass(env, null, bytes, hostKlass.getDefiningClassLoader(), info);
         } catch (EspressoClassLoadingException e) {
-            throw e.asGuestException(env.getMeta());
+            throw e.asGuestException(meta);
         }
 
         // Initialize, because no one else will.
@@ -232,7 +232,7 @@ public final class Target_sun_misc_Unsafe {
         try {
             klass = env.getRegistries().defineKlass(env, env.getTypes().fromClassGetName(meta.toHostString(name)), bytes, loader, new ClassRegistry.ClassDefinitionInfo(pd));
         } catch (EspressoClassLoadingException e) {
-            throw e.asGuestException(env.getMeta());
+            throw e.asGuestException(meta);
         }
         return klass.mirror();
     }
