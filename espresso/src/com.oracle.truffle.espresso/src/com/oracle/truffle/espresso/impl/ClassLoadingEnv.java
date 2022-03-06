@@ -196,8 +196,8 @@ public interface ClassLoadingEnv {
                 this.needsVerify = true;
             }
 
-            public void complancyModeOverride(EspressoOptions.SpecCompliancyMode specCompliancyMode) {
-                this.specCompliancyMode = specCompliancyMode;
+            public void complancyModeOverride(EspressoOptions.SpecCompliancyMode mode) {
+                this.specCompliancyMode = mode;
             }
         }
 
