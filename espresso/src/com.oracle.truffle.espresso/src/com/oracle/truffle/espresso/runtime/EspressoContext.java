@@ -45,6 +45,7 @@ import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 
+import com.oracle.truffle.espresso.impl.ClassLoadingEnv;
 import org.graalvm.options.OptionMap;
 import org.graalvm.polyglot.Engine;
 
@@ -165,6 +166,7 @@ public final class EspressoContext {
     @CompilationFinal private boolean metaInitialized = false;
     private boolean initialized = false;
     private Classpath bootClasspath;
+    private final ClassLoadingEnv.InContext classLoadingEnv;
     // endregion InitControl
 
     // region JDWP
@@ -247,6 +249,7 @@ public final class EspressoContext {
         this.strings = new StringTable(this);
         this.substitutions = new Substitutions(this);
         this.methodHandleIntrinsics = new MethodHandleIntrinsics();
+        this.classLoadingEnv = new ClassLoadingEnv.InContext(this);
 
         this.threadRegistry = new EspressoThreadRegistry(this);
         this.referenceDrainer = new EspressoReferenceDrainer(this);
@@ -1079,6 +1082,10 @@ public final class EspressoContext {
 
     public ClassRedefinition getClassRedefinition() {
         return classRedefinition;
+    }
+
+    public ClassLoadingEnv.InContext getClassLoadingEnv() {
+        return classLoadingEnv;
     }
 
     public boolean anyHierarchyChanged() {
