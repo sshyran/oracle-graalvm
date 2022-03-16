@@ -24,7 +24,7 @@ package com.oracle.truffle.espresso;
 
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 
 import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
@@ -89,9 +89,8 @@ public final class EspressoLanguage extends TruffleLanguage<EspressoContext> {
     public static final String VM_INFO = "mixed mode";
 
     // region ID
-    // TODO (ivan-ristovic): Change to AtomicLong
-    private final AtomicInteger klassIdProvider = new AtomicInteger();
-    private final AtomicInteger loaderIdProvider = new AtomicInteger();
+    private final AtomicLong klassIdProvider = new AtomicLong();
+    private final AtomicLong loaderIdProvider = new AtomicLong();
     // endregion ID
 
     public static final String FILE_EXTENSION = ".class";
@@ -216,16 +215,16 @@ public final class EspressoLanguage extends TruffleLanguage<EspressoContext> {
         throw new UnsupportedOperationException("Unsupported operation. Use the language bindings to load classes e.g. context.getBindings(\"" + ID + "\").getMember(\"java.lang.Integer\")");
     }
 
-    public int getNewLoaderId() {
-        int id = loaderIdProvider.getAndIncrement();
+    public long getNewLoaderId() {
+        long id = loaderIdProvider.getAndIncrement();
         if (id < 0) {
             throw EspressoError.shouldNotReachHere("Exhausted loader IDs");
         }
         return id;
     }
 
-    public int getNewKlassId() {
-        int id = klassIdProvider.getAndIncrement();
+    public long getNewKlassId() {
+        long id = klassIdProvider.getAndIncrement();
         if (id < 0) {
             throw EspressoError.shouldNotReachHere("Exhausted klass IDs");
         }
