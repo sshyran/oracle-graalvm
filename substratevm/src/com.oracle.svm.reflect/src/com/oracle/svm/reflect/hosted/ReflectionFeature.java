@@ -199,7 +199,7 @@ public class ReflectionFeature implements GraalFeature {
 
     @Override
     public void afterRegistration(AfterRegistrationAccess access) {
-        ModuleSupport.exportAndOpenPackageToUnnamed("java.base", "jdk.internal.reflect", false);
+        ModuleSupport.accessPackagesToClass(ModuleSupport.Access.OPEN, null, false, "java.base", "jdk.internal.reflect");
 
         reflectionData = new ReflectionDataBuilder();
         ImageSingletons.add(RuntimeReflectionSupport.class, reflectionData);
