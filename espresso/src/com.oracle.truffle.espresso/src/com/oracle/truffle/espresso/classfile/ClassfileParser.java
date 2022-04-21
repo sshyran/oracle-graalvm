@@ -23,7 +23,7 @@
 
 package com.oracle.truffle.espresso.classfile;
 
-import static com.oracle.truffle.espresso.EspressoOptions.SpecCompliancyMode.STRICT;
+import static com.oracle.truffle.espresso.EspressoOptions.SpecComplianceMode.STRICT;
 import static com.oracle.truffle.espresso.classfile.Constants.ACC_ABSTRACT;
 import static com.oracle.truffle.espresso.classfile.Constants.ACC_ANNOTATION;
 import static com.oracle.truffle.espresso.classfile.Constants.ACC_CALLER_SENSITIVE;
@@ -1217,7 +1217,7 @@ public final class ClassfileParser {
              * HotSpot does not perform this check. Enforcing the spec here break some applications
              * in the wild e.g. Intellij IDEA.
              */
-            if (env.getSpecCompliancyMode() == STRICT) {
+            if (env.getSpecComplianceMode() == STRICT) {
                 if (majorVersion >= JAVA_7_VERSION && innerClassInfo.innerNameIndex == 0 && outerClassIndex != 0) {
                     throw ConstantPool.classFormatError("InnerClassesAttribute: the value of the outer_class_info_index item must be zero if the value of the inner_name_index item is zero.");
                 }

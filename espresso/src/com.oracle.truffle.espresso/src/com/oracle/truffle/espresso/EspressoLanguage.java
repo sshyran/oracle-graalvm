@@ -115,6 +115,7 @@ public final class EspressoLanguage extends TruffleLanguage<EspressoContext> {
     private StaticShape<StaticObjectFactory> foreignShape;
 
     @CompilationFinal private JavaVersion javaVersion;
+    @CompilationFinal private EspressoOptions.SpecComplianceMode specComplianceMode;
 
     private final ContextThreadLocal<EspressoThreadLocalState> threadLocalState = createContextThreadLocal((context, thread) -> new EspressoThreadLocalState(context));
 
@@ -150,6 +151,8 @@ public final class EspressoLanguage extends TruffleLanguage<EspressoContext> {
 
     @Override
     protected EspressoContext createContext(final TruffleLanguage.Env env) {
+        specComplianceMode = env.getOptions().get(EspressoOptions.SpecCompliancy);
+
         // TODO(peterssen): Redirect in/out to env.in()/out()
         EspressoContext context = new EspressoContext(env, this);
         context.setMainArguments(env.getApplicationArguments());
@@ -312,6 +315,10 @@ public final class EspressoLanguage extends TruffleLanguage<EspressoContext> {
 
     public JavaVersion getJavaVersion() {
         return javaVersion;
+    }
+
+    public EspressoOptions.SpecComplianceMode getSpecComplianceMode() {
+        return specComplianceMode;
     }
 
     public void tryInitializeJavaVersion(JavaVersion version) {

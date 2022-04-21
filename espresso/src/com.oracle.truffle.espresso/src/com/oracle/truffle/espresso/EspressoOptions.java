@@ -212,16 +212,16 @@ public final class EspressoOptions {
         return new ArrayList<>(Arrays.asList(strings.split(File.pathSeparator)));
     }
 
-    public enum SpecCompliancyMode {
+    public enum SpecComplianceMode {
         STRICT,
         HOTSPOT
     }
 
-    private static final OptionType<SpecCompliancyMode> SPEC_COMPLIANCY_OPTION_TYPE = new OptionType<>("SpecCompliancy", new Function<String, SpecCompliancyMode>() {
+    private static final OptionType<SpecComplianceMode> SPEC_COMPLIANCY_OPTION_TYPE = new OptionType<>("SpecCompliancy", new Function<String, SpecComplianceMode>() {
         @Override
-        public SpecCompliancyMode apply(String s) {
+        public SpecComplianceMode apply(String s) {
             try {
-                return SpecCompliancyMode.valueOf(s.toUpperCase());
+                return SpecComplianceMode.valueOf(s.toUpperCase());
             } catch (IllegalArgumentException e) {
                 throw new IllegalArgumentException("--java.SpecCompliancy: Mode can be 'strict' or 'hotspot'.");
             }
@@ -232,11 +232,11 @@ public final class EspressoOptions {
                     category = OptionCategory.EXPERT, //
                     stability = OptionStability.EXPERIMENTAL, //
                     usageSyntax = "hotspot|strict") //
-    public static final OptionKey<SpecCompliancyMode> SpecCompliancy = new OptionKey<>(SpecCompliancyMode.HOTSPOT, SPEC_COMPLIANCY_OPTION_TYPE);
+    public static final OptionKey<SpecComplianceMode> SpecCompliancy = new OptionKey<>(SpecComplianceMode.HOTSPOT, SPEC_COMPLIANCY_OPTION_TYPE);
 
     public enum VerifyMode {
         NONE,
-        REMOTE, // Verifies all bytecodes not loaded by the bootstrap class loader.
+        REMOTE, // Verifies all bytecodeSpecComplis not loaded by the bootstrap class loader.
         ALL
     }
 

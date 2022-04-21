@@ -195,7 +195,6 @@ public final class EspressoContext {
     // Behavior control
     public final boolean EnableManagement;
     public final EspressoOptions.VerifyMode Verify;
-    public final EspressoOptions.SpecCompliancyMode SpecCompliancyMode;
     public final boolean Polyglot;
     public final boolean HotSwapAPI;
     public final boolean ExitHost;
@@ -271,7 +270,6 @@ public final class EspressoContext {
         this.SplitMethodHandles = JDWPOptions == null && env.getOptions().get(EspressoOptions.SplitMethodHandles);
         this.Verify = env.getOptions().get(EspressoOptions.Verify);
         this.EnableSignals = env.getOptions().get(EspressoOptions.EnableSignals);
-        this.SpecCompliancyMode = env.getOptions().get(EspressoOptions.SpecCompliancy);
         this.LivenessAnalysisMode = env.getOptions().get(EspressoOptions.LivenessAnalysis);
         this.LivenessAnalysisMinimumLocals = env.getOptions().get(EspressoOptions.LivenessAnalysisMinimumLocals);
         this.EnableManagement = env.getOptions().get(EspressoOptions.EnableManagement);

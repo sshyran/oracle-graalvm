@@ -34,7 +34,6 @@ import com.oracle.truffle.espresso.descriptors.Types;
 import com.oracle.truffle.espresso.meta.EspressoError;
 import com.oracle.truffle.espresso.meta.Meta;
 import com.oracle.truffle.espresso.perf.TimerCollection;
-import com.oracle.truffle.espresso.runtime.Classpath;
 import com.oracle.truffle.espresso.runtime.EspressoContext;
 import com.oracle.truffle.espresso.runtime.JavaVersion;
 import com.oracle.truffle.espresso.runtime.StaticObject;
@@ -53,9 +52,7 @@ public interface ClassLoadingEnv {
 
     JavaVersion getJavaVersion();
 
-    EspressoOptions.SpecCompliancyMode getSpecCompliancyMode();
-
-    Classpath getBootClasspath();
+    EspressoOptions.SpecComplianceMode getSpecComplianceMode();
 
     boolean needsVerify(StaticObject loader);
 
@@ -89,6 +86,11 @@ public interface ClassLoadingEnv {
         @Override
         public Types getTypes() {
             return language.getTypes();
+        }
+
+        @Override
+        public EspressoOptions.SpecComplianceMode getSpecComplianceMode() {
+            return language.getSpecComplianceMode();
         }
     }
 
@@ -128,16 +130,6 @@ public interface ClassLoadingEnv {
         }
 
         @Override
-        public EspressoOptions.SpecCompliancyMode getSpecCompliancyMode() {
-            return getContext().SpecCompliancyMode;
-        }
-
-        @Override
-        public Classpath getBootClasspath() {
-            return getContext().getBootClasspath();
-        }
-
-        @Override
         public boolean needsVerify(StaticObject loader) {
             return getContext().needsVerify(loader);
         }
@@ -174,18 +166,10 @@ public interface ClassLoadingEnv {
 
         public static class Options {
             private final TruffleLogger logger;
-            private final Classpath classpath;
-            private EspressoOptions.SpecCompliancyMode specCompliancyMode;
             private boolean needsVerify;
 
-            public Options(Classpath cp) {
-                this(cp, TruffleLogger.getLogger(EspressoLanguage.ID));
-            }
-
-            public Options(Classpath cp, TruffleLogger loggerOverride) {
-                classpath = cp;
-                logger = loggerOverride;
-                specCompliancyMode = EspressoOptions.SpecCompliancy.getDefaultValue();
+            public Options() {
+                logger = TruffleLogger.getLogger(EspressoLanguage.ID);
                 EspressoOptions.VerifyMode defaultVerifyMode = EspressoOptions.Verify.getDefaultValue();
                 needsVerify = defaultVerifyMode != EspressoOptions.VerifyMode.NONE;
             }
@@ -193,16 +177,12 @@ public interface ClassLoadingEnv {
             public void enableVerify() {
                 this.needsVerify = true;
             }
-
-            public void complancyModeOverride(EspressoOptions.SpecCompliancyMode mode) {
-                this.specCompliancyMode = mode;
-            }
         }
 
         private final Options options;
 
-        public WithoutContext(EspressoLanguage language, Classpath cp) {
-            this(language, new Options(cp));
+        public WithoutContext(EspressoLanguage language) {
+            this(language, new Options());
         }
 
         public WithoutContext(EspressoLanguage language, Options opts) {
@@ -223,16 +203,6 @@ public interface ClassLoadingEnv {
         @Override
         public JavaVersion getJavaVersion() {
             return getLanguage().getJavaVersion();
-        }
-
-        @Override
-        public EspressoOptions.SpecCompliancyMode getSpecCompliancyMode() {
-            return options.specCompliancyMode;
-        }
-
-        @Override
-        public Classpath getBootClasspath() {
-            return options.classpath;
         }
 
         @Override
