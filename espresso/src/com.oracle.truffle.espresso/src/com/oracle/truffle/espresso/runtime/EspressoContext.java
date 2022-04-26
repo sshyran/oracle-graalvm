@@ -479,7 +479,6 @@ public final class EspressoContext {
 
             this.nativeAccess = spawnNativeAccess();
             initVmProperties();
-
             // Spawn JNI first, then the VM.
             try (DebugCloseable vmInit = VM_INIT.scope(timers)) {
                 this.jniEnv = JniEnv.create(this); // libnespresso
@@ -499,6 +498,7 @@ public final class EspressoContext {
 
             initializeAgents();
 
+            registries.getBootClassRegistry().setBootKlassPath(getBootClasspath());
             try (DebugCloseable metaInit = META_INIT.scope(timers)) {
                 this.meta = new Meta(this);
             }
@@ -507,7 +507,6 @@ public final class EspressoContext {
             this.blockingSupport = BlockingSupport.create(threads);
 
             this.interpreterToVM = new InterpreterToVM(this);
-
             try (DebugCloseable knownClassInit = KNOWN_CLASS_INIT.scope(timers)) {
                 initializeKnownClass(Type.java_lang_Object);
 
