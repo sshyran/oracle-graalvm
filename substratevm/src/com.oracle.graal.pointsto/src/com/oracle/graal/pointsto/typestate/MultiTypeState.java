@@ -182,7 +182,7 @@ public class MultiTypeState extends TypeState {
     }
 
     @Override
-    public Iterator<AnalysisObject> objectsIterable(AnalysisType exactType) {
+    public Iterator<AnalysisObject> objectsIterator(AnalysisType exactType) {
         throw AnalysisError.shouldNotReachHere("unimplemented");
     }
 

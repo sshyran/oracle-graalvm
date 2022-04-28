@@ -100,6 +100,8 @@ public abstract class TypeState {
     /** Returns the objects as an array. */
     public abstract AnalysisObject[] objects();
 
+    public abstract Iterable<AnalysisObject> objectsIterable();
+
     /** Returns the objects corresponding to the type. It copies those objects to a new array. */
     public abstract AnalysisObject[] objectsArray(AnalysisType type);
 
@@ -376,7 +378,7 @@ public abstract class TypeState {
         return forCanBeNull(bb, false);
     }
 
-    protected abstract TypeState forCanBeNull(PointsToAnalysis bb, boolean stateCanBeNull);
+    public abstract TypeState forCanBeNull(PointsToAnalysis bb, boolean stateCanBeNull);
 
     public static TypeState forUnion(PointsToAnalysis bb, TypeState s1, TypeState s2) {
         if (s1.isEmpty()) {
@@ -524,7 +526,7 @@ final class EmptyTypeState extends TypeState {
     }
 
     @Override
-    protected TypeState forCanBeNull(PointsToAnalysis bb, boolean stateCanBeNull) {
+    public TypeState forCanBeNull(PointsToAnalysis bb, boolean stateCanBeNull) {
         return stateCanBeNull ? NullTypeState.SINGLETON : EmptyTypeState.SINGLETON;
     }
 
@@ -536,6 +538,11 @@ final class EmptyTypeState extends TypeState {
     @Override
     public AnalysisObject[] objects() {
         return AnalysisObject.EMPTY_ARRAY;
+    }
+
+    @Override
+    public Iterable<AnalysisObject> objectsIterable() {
+        return Collections.emptyList();
     }
 
     @Override
@@ -628,6 +635,11 @@ final class NullTypeState extends TypeState {
     @Override
     public AnalysisObject[] objects() {
         return AnalysisObject.EMPTY_ARRAY;
+    }
+
+    @Override
+    public Iterable<AnalysisObject> objectsIterable() {
+        return Collections.emptyList();
     }
 
     @Override

@@ -98,7 +98,7 @@ public class TypeStateUtils {
 
     }
 
-    protected static AnalysisObject[] concat(AnalysisObject[] oa1, AnalysisObject[] oa2) {
+    public static AnalysisObject[] concat(AnalysisObject[] oa1, AnalysisObject[] oa2) {
         int resultSize = oa1.length + oa2.length;
 
         AnalysisObject[] result = new AnalysisObject[resultSize];
@@ -110,7 +110,7 @@ public class TypeStateUtils {
     }
 
     /** Returns the union of the two analysis object arrays of the same type. */
-    protected static AnalysisObject[] union(PointsToAnalysis bb, AnalysisObject[] a1, AnalysisObject[] a2) {
+    public static AnalysisObject[] union(PointsToAnalysis bb, AnalysisObject[] a1, AnalysisObject[] a2) {
         // assert this.type() == other.type();
 
         if (a1.length == 1 && bb.analysisPolicy().isSummaryObject(a1[0])) {

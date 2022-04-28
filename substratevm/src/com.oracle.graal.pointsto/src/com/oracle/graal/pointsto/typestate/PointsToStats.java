@@ -373,7 +373,7 @@ public class PointsToStats {
 
     private static ConcurrentHashMap<UnionOperation, AtomicInteger> unionStats = new ConcurrentHashMap<>();
 
-    static void registerUnionOperation(PointsToAnalysis bb, TypeState s1, TypeState s2, TypeState result) {
+    public static void registerUnionOperation(PointsToAnalysis bb, TypeState s1, TypeState s2, TypeState result) {
 
         if (!bb.reportAnalysisStatistics()) {
             return;

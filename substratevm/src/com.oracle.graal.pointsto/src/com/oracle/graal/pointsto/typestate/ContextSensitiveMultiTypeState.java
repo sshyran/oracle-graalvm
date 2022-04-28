@@ -278,7 +278,7 @@ public class ContextSensitiveMultiTypeState extends MultiTypeState {
     }
 
     @Override
-    public Iterator<AnalysisObject> objectsIterable(AnalysisType exactType) {
+    public Iterator<AnalysisObject> objectsIterator(AnalysisType exactType) {
         return new Iterator<>() {
             private Range typeRange = findTypeRange(exactType);
             private int idx = typeRange.left;

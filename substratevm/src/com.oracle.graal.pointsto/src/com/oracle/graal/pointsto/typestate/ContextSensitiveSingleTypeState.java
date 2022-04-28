@@ -27,54 +27,64 @@ package com.oracle.graal.pointsto.typestate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
-import java.util.Collections;
 import java.util.Iterator;
-import java.util.List;
 
 import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.flow.context.object.AnalysisObject;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 
-public class SingleTypeState extends TypeState {
-    /** Can this type state represent the null value? */
-    protected final boolean canBeNull;
-    /** Has this type state been merged with the all-instantiated type state? */
-    protected boolean merged;
+public class ContextSensitiveSingleTypeState extends SingleTypeState {
+    /** The objects of this type state. */
+    protected final AnalysisObject[] objects;
 
-    protected AnalysisType type;
+    public ContextSensitiveSingleTypeState(PointsToAnalysis bb, boolean canBeNull, int properties, AnalysisType type, ArrayList<AnalysisObject> objects) {
+        this(bb, canBeNull, properties, type, objects.toArray(AnalysisObject.EMPTY_ARRAY));
+        assert objects.size() > 0 : "Single type state with no objects.";
+    }
 
     /** Creates a new type state from incoming objects. */
-    public SingleTypeState(PointsToAnalysis bb, boolean canBeNull, int properties, AnalysisType type) {
-        super(properties);
-        this.canBeNull = canBeNull;
-        this.merged = false;
+    public ContextSensitiveSingleTypeState(PointsToAnalysis bb, boolean canBeNull, int properties, AnalysisType type, AnalysisObject... objects) {
+        super(bb, canBeNull, properties, type);
+        this.objects = objects;
+        assert !bb.extendedAsserts() || checkObjects(bb);
 
         PointsToStats.registerTypeState(bb, this);
     }
 
     /** Create a type state with the same content and a reversed canBeNull value. */
-    protected SingleTypeState(PointsToAnalysis bb, boolean canBeNull, SingleTypeState other) {
-        super(other.properties);
-        this.canBeNull = canBeNull;
-        this.merged = other.merged;
+    protected ContextSensitiveSingleTypeState(PointsToAnalysis bb, boolean canBeNull, ContextSensitiveSingleTypeState other) {
+        super(bb, canBeNull, other);
+        this.objects = other.objects;
 
         PointsToStats.registerTypeState(bb, this);
     }
 
-    @Override
-    public final int typesCount() {
-        return 1;
-    }
+    protected boolean checkObjects(BigBang bb) {
+        assert bb.extendedAsserts();
 
-    @Override
-    public final boolean hasExactTypes(BitSet inputTypesBitSet) {
-        return inputTypesBitSet.cardinality() == 1 && inputTypesBitSet.get(exactType().getId());
+        /* Check that the objects array are sorted by type. */
+        for (int idx = 0; idx < objects.length - 1; idx++) {
+            AnalysisObject o0 = objects[idx];
+            AnalysisObject o1 = objects[idx + 1];
+
+            assert o0 != null && o1 != null : "Object state must contain non null elements.";
+
+            assert o0.type().equals(o1.type()) : "Single type state objects must have the same type.";
+            /*
+             * Check that the objects are sorted by ID. Since the objects should be unique (context
+             * sensitive objects are merged when they have the same type during the union
+             * operation), we use < for the test.
+             */
+            assert o0.getId() < o1.getId() : "Analysis objects must be sorted by ID.";
+        }
+
+        return true;
     }
 
     @Override
     public AnalysisType exactType() {
-        return type;
+        return objects[0].type();
     }
 
     @Override
@@ -102,56 +112,41 @@ public class SingleTypeState extends TypeState {
     }
 
     @Override
-    public int objectsCount() {
-        return 1;
+    public final int objectsCount() {
+        return objects.length;
     }
 
     @Override
-    public AnalysisObject[] objects() {
-        return new AnalysisObject[]{type.getContextInsensitiveAnalysisObject()};
+    public final AnalysisObject[] objects() {
+        return objects;
     }
 
     @Override
     public Iterable<AnalysisObject> objectsIterable() {
-        return List.of(type.getContextInsensitiveAnalysisObject());
+        return Arrays.asList(objects);
     }
 
     @Override
     public AnalysisObject[] objectsArray(AnalysisType type) {
-        return exactType().equals(type) ? objects() : null;
+        return exactType().equals(type) ? objects : null;
     }
 
     @Override
     protected Iterator<AnalysisObject> objectsIterator(AnalysisType type) {
         return new Iterator<>() {
             private final boolean typesEqual = exactType().equals(type);
-            boolean hasNext = true;
+            private int idx = 0;
 
             @Override
             public boolean hasNext() {
-                return typesEqual && hasNext;
+                return typesEqual && idx < objects.length;
             }
 
             @Override
             public AnalysisObject next() {
-                hasNext = false;
-                return type.getContextInsensitiveAnalysisObject();
+                return objects[idx++];
             }
         };
-    }
-
-    @Override
-    public final boolean canBeNull() {
-        return canBeNull;
-    }
-
-    @Override
-    public final TypeState exactTypeState(PointsToAnalysis bb, AnalysisType exactType) {
-        if (this.containsType(exactType)) {
-            return this;
-        } else {
-            return EmptyTypeState.SINGLETON;
-        }
     }
 
     @Override
@@ -159,7 +154,7 @@ public class SingleTypeState extends TypeState {
         if (stateCanBeNull == this.canBeNull()) {
             return this;
         } else {
-            return new SingleTypeState(bb, stateCanBeNull, this);
+            return new ContextSensitiveSingleTypeState(bb, stateCanBeNull, this);
         }
     }
 
@@ -169,7 +164,9 @@ public class SingleTypeState extends TypeState {
         assert bb.analysisPolicy().isMergingEnabled();
 
         if (!merged) {
-            type.getContextInsensitiveAnalysisObject().noteMerge(bb);
+            for (AnalysisObject obj : objects) {
+                obj.noteMerge(bb);
+            }
             merged = true;
         }
     }
@@ -182,7 +179,7 @@ public class SingleTypeState extends TypeState {
     @Override
     public int hashCode() {
         int result = 1;
-        result = 31 * result + type.hashCode();
+        result = 31 * result + Arrays.hashCode(objects);
         result = 31 * result + (canBeNull ? 1 : 0);
         return result;
     }
@@ -196,13 +193,13 @@ public class SingleTypeState extends TypeState {
             return false;
         }
 
-        SingleTypeState that = (SingleTypeState) o;
-        return this.canBeNull == that.canBeNull && this.exactType().equals(that.exactType());
+        ContextSensitiveSingleTypeState that = (ContextSensitiveSingleTypeState) o;
+        return this.canBeNull == that.canBeNull && this.exactType().equals(that.exactType()) && Arrays.equals(this.objects, that.objects);
     }
 
     @Override
     public String toString() {
-        return "SingleType<" + (canBeNull ? "null," : "") + ">";
+        return "1TypeMObject<" + (canBeNull ? "null," : "") + Arrays.toString(objects) + ">";
     }
 
 }
