@@ -25,9 +25,7 @@
 package com.oracle.graal.pointsto.flow.context.object;
 
 import java.lang.reflect.Modifier;
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 
 import com.oracle.graal.pointsto.PointsToAnalysis;
@@ -40,13 +38,10 @@ import com.oracle.graal.pointsto.meta.AnalysisField;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.meta.AnalysisUniverse;
 import com.oracle.graal.pointsto.typestore.FieldTypeStore;
-import com.oracle.graal.pointsto.typestore.UnifiedFieldTypeStore;
 
 import jdk.vm.ci.code.BytecodePosition;
 
 public class ContextSensitiveAnalysisObject extends AnalysisObject {
-
-    private List<AnalysisObject> referencedObjects;
 
     public ContextSensitiveAnalysisObject(AnalysisUniverse universe, AnalysisType type, AnalysisObjectKind kind) {
         super(universe, type, kind);

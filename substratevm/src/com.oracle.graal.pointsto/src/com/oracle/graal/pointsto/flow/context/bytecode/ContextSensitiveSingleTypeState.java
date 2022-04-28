@@ -124,9 +124,9 @@ public class ContextSensitiveSingleTypeState extends SingleTypeState implements 
     }
 
     @Override
-    protected Iterator<AnalysisObject> objectsIterator(AnalysisType type) {
+    protected Iterator<AnalysisObject> objectsIterator(AnalysisType t) {
         return new Iterator<>() {
-            private final boolean typesEqual = exactType().equals(type);
+            private final boolean typesEqual = type.equals(t);
             private int idx = 0;
 
             @Override

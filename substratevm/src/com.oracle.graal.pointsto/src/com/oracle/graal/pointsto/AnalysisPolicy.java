@@ -24,9 +24,8 @@
  */
 package com.oracle.graal.pointsto;
 
-import com.oracle.graal.pointsto.typestate.MultiTypeState;
-import com.oracle.graal.pointsto.typestate.SingleTypeState;
-import com.oracle.graal.pointsto.typestate.TypeStateUtils;
+import java.util.BitSet;
+
 import org.graalvm.compiler.options.OptionValues;
 
 import com.oracle.graal.pointsto.api.PointstoOptions;
@@ -44,14 +43,15 @@ import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.meta.AnalysisUniverse;
 import com.oracle.graal.pointsto.meta.PointsToAnalysisMethod;
+import com.oracle.graal.pointsto.typestate.MultiTypeState;
+import com.oracle.graal.pointsto.typestate.SingleTypeState;
 import com.oracle.graal.pointsto.typestate.TypeState;
+import com.oracle.graal.pointsto.typestate.TypeStateUtils;
 import com.oracle.graal.pointsto.typestore.ArrayElementsTypeStore;
 import com.oracle.graal.pointsto.typestore.FieldTypeStore;
 
 import jdk.vm.ci.code.BytecodePosition;
 import jdk.vm.ci.meta.JavaConstant;
-
-import java.util.BitSet;
 
 public abstract class AnalysisPolicy {
 
@@ -183,6 +183,7 @@ public abstract class AnalysisPolicy {
 
     public abstract TypeState doUnion(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2);
 
+    @SuppressWarnings("static-method")
     public final TypeState doIntersection(PointsToAnalysis bb, SingleTypeState s1, SingleTypeState s2) {
         assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(bb, s2) : "Current implementation limitation.";
         boolean resultCanBeNull = s1.canBeNull() && s2.canBeNull();
@@ -195,6 +196,7 @@ public abstract class AnalysisPolicy {
         }
     }
 
+    @SuppressWarnings("static-method")
     public final TypeState doIntersection(PointsToAnalysis bb, SingleTypeState s1, MultiTypeState s2) {
         assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(bb, s2) : "Current implementation limitation.";
         boolean resultCanBeNull = s1.canBeNull() && s2.canBeNull();
@@ -209,6 +211,7 @@ public abstract class AnalysisPolicy {
 
     public abstract TypeState doIntersection(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2);
 
+    @SuppressWarnings("static-method")
     public final TypeState doSubtraction(PointsToAnalysis bb, SingleTypeState s1, SingleTypeState s2) {
         assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(bb, s2) : "Current implementation limitation.";
         boolean resultCanBeNull = s1.canBeNull() && !s2.canBeNull();
@@ -219,6 +222,7 @@ public abstract class AnalysisPolicy {
         }
     }
 
+    @SuppressWarnings("static-method")
     public final TypeState doSubtraction(PointsToAnalysis bb, SingleTypeState s1, MultiTypeState s2) {
         assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(bb, s2) : "Current implementation limitation.";
         boolean resultCanBeNull = s1.canBeNull() && !s2.canBeNull();

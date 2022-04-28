@@ -138,10 +138,6 @@ public class ContextSensitiveMultiTypeState extends MultiTypeState implements Co
         return typesBitSet.equals(inputTypesBitSet);
     }
 
-    public BitSet typesBitSet() {
-        return typesBitSet;
-    }
-
     /** Get the type of the first object group. */
     public AnalysisType firstType() {
         return objects[0].type();

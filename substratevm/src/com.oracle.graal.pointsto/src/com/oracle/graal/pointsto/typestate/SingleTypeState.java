@@ -111,9 +111,9 @@ public class SingleTypeState extends TypeState {
     }
 
     @Override
-    protected Iterator<AnalysisObject> objectsIterator(AnalysisType type) {
+    protected Iterator<AnalysisObject> objectsIterator(AnalysisType t) {
         return new Iterator<>() {
-            private final boolean typesEqual = exactType().equals(type);
+            private final boolean typesEqual = type.equals(t);
             boolean hasNext = true;
 
             @Override
@@ -124,7 +124,7 @@ public class SingleTypeState extends TypeState {
             @Override
             public AnalysisObject next() {
                 hasNext = false;
-                return type.getContextInsensitiveAnalysisObject();
+                return t.getContextInsensitiveAnalysisObject();
             }
         };
     }

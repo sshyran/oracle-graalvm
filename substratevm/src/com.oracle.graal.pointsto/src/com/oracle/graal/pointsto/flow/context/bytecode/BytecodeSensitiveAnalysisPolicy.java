@@ -346,6 +346,10 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
             TypeState receiverState = getReceiver().getState();
             receiverState = filterReceiverState(bb, receiverState);
 
+            if (receiverState.isEmpty() || receiverState.isNull()) {
+                return;
+            }
+
             /* Use the tandem types - objects iterator. */
             TypesObjectsIterator toi = new TypesObjectsIterator((ContextSensitiveTypeState) receiverState);
             while (toi.hasNextType()) {
@@ -1138,7 +1142,7 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
             assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(bb, s2) : "Current implementation limitation.";
 
             /* Find the range of objects of s2.exactType() in s1. */
-            ContextSensitiveMultiTypeState.Range typeRange = ((ContextSensitiveMultiTypeState) s1).findTypeRange(s2.exactType());
+            ContextSensitiveMultiTypeState.Range typeRange = s1.findTypeRange(s2.exactType());
             int newLength = s1.objects.length - (typeRange.right() - typeRange.left());
             AnalysisObject[] resultObjects = new AnalysisObject[newLength];
 
