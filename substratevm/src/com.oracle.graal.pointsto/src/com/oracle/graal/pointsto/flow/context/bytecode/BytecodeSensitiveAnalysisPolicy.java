@@ -22,7 +22,7 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-package com.oracle.graal.pointsto;
+package com.oracle.graal.pointsto.flow.context.bytecode;
 
 import static com.oracle.graal.pointsto.util.ListUtils.getTLArrayList;
 
@@ -34,10 +34,10 @@ import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-import com.oracle.graal.pointsto.flow.MethodTypeFlow;
-import com.oracle.graal.pointsto.util.ListUtils;
 import org.graalvm.compiler.options.OptionValues;
 
+import com.oracle.graal.pointsto.AnalysisPolicy;
+import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.api.PointstoOptions;
 import com.oracle.graal.pointsto.flow.AbstractSpecialInvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.AbstractVirtualInvokeTypeFlow;
@@ -47,10 +47,10 @@ import com.oracle.graal.pointsto.flow.CloneTypeFlow;
 import com.oracle.graal.pointsto.flow.ContextInsensitiveFieldTypeFlow;
 import com.oracle.graal.pointsto.flow.FieldTypeFlow;
 import com.oracle.graal.pointsto.flow.MethodFlowsGraph;
+import com.oracle.graal.pointsto.flow.MethodTypeFlow;
 import com.oracle.graal.pointsto.flow.TypeFlow;
 import com.oracle.graal.pointsto.flow.context.AnalysisContext;
 import com.oracle.graal.pointsto.flow.context.BytecodeLocation;
-import com.oracle.graal.pointsto.flow.context.bytecode.BytecodeAnalysisContextPolicy;
 import com.oracle.graal.pointsto.flow.context.object.AllocationContextSensitiveObject;
 import com.oracle.graal.pointsto.flow.context.object.AnalysisObject;
 import com.oracle.graal.pointsto.meta.AnalysisField;
@@ -58,13 +58,10 @@ import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.meta.AnalysisUniverse;
 import com.oracle.graal.pointsto.meta.PointsToAnalysisMethod;
-import com.oracle.graal.pointsto.typestate.ContextSensitiveMultiTypeState;
-import com.oracle.graal.pointsto.typestate.ContextSensitiveSingleTypeState;
 import com.oracle.graal.pointsto.typestate.MultiTypeState;
 import com.oracle.graal.pointsto.typestate.PointsToStats;
 import com.oracle.graal.pointsto.typestate.SingleTypeState;
 import com.oracle.graal.pointsto.typestate.TypeState;
-import com.oracle.graal.pointsto.typestate.TypeState.TypesObjectsIterator;
 import com.oracle.graal.pointsto.typestate.TypeStateUtils;
 import com.oracle.graal.pointsto.typestore.ArrayElementsTypeStore;
 import com.oracle.graal.pointsto.typestore.FieldTypeStore;
@@ -72,6 +69,7 @@ import com.oracle.graal.pointsto.typestore.SplitArrayElementsTypeStore;
 import com.oracle.graal.pointsto.typestore.SplitFieldTypeStore;
 import com.oracle.graal.pointsto.typestore.UnifiedArrayElementsTypeStore;
 import com.oracle.graal.pointsto.typestore.UnifiedFieldTypeStore;
+import com.oracle.graal.pointsto.util.ListUtils;
 import com.oracle.graal.pointsto.util.ListUtils.UnsafeArrayList;
 import com.oracle.graal.pointsto.util.ListUtils.UnsafeArrayListClosable;
 
@@ -349,7 +347,7 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
             receiverState = filterReceiverState(bb, receiverState);
 
             /* Use the tandem types - objects iterator. */
-            TypesObjectsIterator toi = receiverState.getTypesObjectsIterator();
+            TypesObjectsIterator toi = new TypesObjectsIterator((ContextSensitiveTypeState) receiverState);
             while (toi.hasNextType()) {
                 AnalysisType type = toi.nextType();
 
@@ -401,6 +399,72 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
         @Override
         public Collection<MethodFlowsGraph> getCalleesFlows(PointsToAnalysis bb) {
             return new ArrayList<>(calleesFlows.keySet());
+        }
+    }
+
+    /**
+     * This is a special iterator for the type state. It iterates over analysis types and objects in
+     * tandem doing a single pass over the objects array. It relies on the fact that the types and
+     * objects are sorted by ID. It is meant for situations where the types need some pre-processing
+     * or checking before processing their respective objects, e.g., as in virtual method resolution
+     * for InvokeTypeFlow. It those situations it avoids iterating over the types first and then
+     * searching for the range of objects corresponding to that type. When only objects, or only
+     * types, or only objects of a certain type need to be iterated use the other provided
+     * iterators. A correct use of this iterator is as follows:
+     *
+     * <code>
+     * TypesObjectsIterator toi = state.getTypesObjectsIterator();
+     *
+     * while(toi.hasNextType()) {
+     *      AnalysisType t = toi.nextType();
+     *      // use type here
+     *
+     *      while(toi.hasNextObject(t)) {
+     *          AnalysisObject o = toi.nextObject(t);
+     *          // use object here
+     *      }
+     * }
+     * </code>
+     */
+    public static class TypesObjectsIterator {
+
+        private final ContextSensitiveTypeState state;
+        private int typeIdx = 0;
+        private int objectIdx = 0;
+
+        public TypesObjectsIterator(ContextSensitiveTypeState state) {
+            this.state = state;
+        }
+
+        /**
+         * Returns true if there is a next type in the objects array, i.e., there are objects of a
+         * type other than the current type.
+         */
+        public boolean hasNextType() {
+            return typeIdx < state.typesCount();
+        }
+
+        /** Returns true if there are more objects of the current type. */
+        public boolean hasNextObject(AnalysisType type) {
+            return objectIdx < state.objectsArray().length && state.objectsArray()[objectIdx].getTypeId() == type.getId();
+        }
+
+        /** Gets the next type. */
+        public AnalysisType nextType() {
+            /* Check that there is a next type. */
+            assert hasNextType();
+            /* Increment the type index. */
+            typeIdx++;
+            /* Return the type at the 'objectIdx. */
+            return state.objectsArray()[objectIdx].type();
+        }
+
+        /** Gets the next object. */
+        public AnalysisObject nextObject(AnalysisType type) {
+            /* Check that there is a next object of the desired type. */
+            assert hasNextObject(type);
+            /* Return the next object and increment objectIdx. */
+            return state.objectsArray()[objectIdx++];
         }
     }
 
@@ -476,17 +540,17 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
             /* The inputs have the same type, so the result is a SingleTypeState. */
 
             /* Create the resulting objects array. */
-            AnalysisObject[] resultObjects = TypeStateUtils.union(bb, s1.objects(), s2.objects());
+            AnalysisObject[] resultObjects = TypeStateUtils.union(bb, s1.objects, s2.objects);
 
             /* Check if any of the arrays contains the other. */
-            if (resultObjects == s1.objects()) {
+            if (resultObjects == s1.objects) {
                 return s1.forCanBeNull(bb, resultCanBeNull);
-            } else if (resultObjects == s2.objects()) {
+            } else if (resultObjects == s2.objects) {
                 return s2.forCanBeNull(bb, resultCanBeNull);
             }
 
             /* Due to the test above the union set cannot be equal to any of the two arrays. */
-            assert !bb.extendedAsserts() || !Arrays.equals(resultObjects, s1.objects()) && !Arrays.equals(resultObjects, s2.objects());
+            assert !bb.extendedAsserts() || !Arrays.equals(resultObjects, s1.objects) && !Arrays.equals(resultObjects, s2.objects);
 
             /* Create the resulting exact type state. */
             SingleTypeState result = new ContextSensitiveSingleTypeState(bb, resultCanBeNull, bb.analysisPolicy().makePropertiesForUnion(s1, s2), s1.exactType(), resultObjects);
@@ -497,9 +561,9 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
             /* The inputs have different types, so the result is a MultiTypeState. */
             AnalysisObject[] resultObjects;
             if (s1.exactType().getId() < s2.exactType().getId()) {
-                resultObjects = TypeStateUtils.concat(s1.objects(), s2.objects());
+                resultObjects = TypeStateUtils.concat(s1.objects, s2.objects);
             } else {
-                resultObjects = TypeStateUtils.concat(s2.objects(), s1.objects());
+                resultObjects = TypeStateUtils.concat(s2.objects, s1.objects);
             }
 
             /* We know the types, construct the types bit set without walking the objects. */
@@ -516,15 +580,16 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
     }
 
     @Override
-    public TypeState doUnion(PointsToAnalysis bb, MultiTypeState state1, SingleTypeState s2) {
+    public TypeState doUnion(PointsToAnalysis bb, MultiTypeState state1, SingleTypeState state2) {
 
         ContextSensitiveMultiTypeState s1 = (ContextSensitiveMultiTypeState) state1;
+        ContextSensitiveSingleTypeState s2 = (ContextSensitiveSingleTypeState) state2;
 
         boolean resultCanBeNull = s1.canBeNull() || s2.canBeNull();
 
-        AnalysisObject[] so1 = s1.objects();
-        AnalysisObject[] so2 = s2.objects();
-        if (so2.length == 1 && s1.containsObject(so2[0])) {
+        AnalysisObject[] so1 = s1.objects;
+        AnalysisObject[] so2 = s2.objects;
+        if (so2.length == 1 && containsObject(s1, so2[0])) {
             /*
              * Speculate that s2 has a single object and s1 already contains that object. This
              * happens often during object scanning where we repeatedly add the scanned constants to
@@ -611,6 +676,12 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
         }
     }
 
+    /** Returns true if this type state contains the object, otherwise it returns false. */
+    public static boolean containsObject(ContextSensitiveMultiTypeState state, AnalysisObject object) {
+        /* AnalysisObject implements Comparable and the objects array is always sorted by ID. */
+        return state.containsType(object.type()) && Arrays.binarySearch(state.objects, object) >= 0;
+    }
+
     @Override
     public TypeState doUnion(PointsToAnalysis bb, MultiTypeState state1, MultiTypeState state2) {
         ContextSensitiveMultiTypeState s1 = (ContextSensitiveMultiTypeState) state1;
@@ -623,7 +694,7 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
          * No need for a deep equality check (which would need to iterate the arrays), since the
          * speculation logic below is doing that anyway.
          */
-        if (s1.objects() == s2.objects()) {
+        if (s1.objects == s2.objects) {
             return s1.forCanBeNull(bb, resultCanBeNull);
         }
 
@@ -638,7 +709,7 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
             /* Speculate that objects in s2 follow after objects in s1. */
 
             /* Concatenate the objects. */
-            AnalysisObject[] resultObjects = TypeStateUtils.concat(s1.objects(), s2.objects());
+            AnalysisObject[] resultObjects = TypeStateUtils.concat(s1.objects, s2.objects);
 
             /* Logical OR the type bit sets. */
             BitSet resultTypesBitSet = TypeStateUtils.or(s1.typesBitSet(), s2.typesBitSet());
@@ -652,7 +723,7 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
             /* Speculate that objects in s1 follow after objects in s2. */
 
             /* Concatenate the objects. */
-            AnalysisObject[] resultObjects = TypeStateUtils.concat(s2.objects(), s1.objects());
+            AnalysisObject[] resultObjects = TypeStateUtils.concat(s2.objects, s1.objects);
 
             /* Logical OR the type bit sets. */
             BitSet resultTypesBitSet = TypeStateUtils.or(s1.typesBitSet(), s2.typesBitSet());
@@ -666,7 +737,7 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
         return doUnion1(bb, s1, s2, resultCanBeNull);
     }
 
-    private static TypeState doUnion1(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2, boolean resultCanBeNull) {
+    private static TypeState doUnion1(PointsToAnalysis bb, ContextSensitiveMultiTypeState s1, ContextSensitiveMultiTypeState s2, boolean resultCanBeNull) {
         if (PointstoOptions.AllocationSiteSensitiveHeap.getValue(bb.getOptions())) {
             return allocationSensitiveSpeculativeUnion1(bb, s1, s2, resultCanBeNull);
         } else {
@@ -677,11 +748,11 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
     /**
      * Optimization that gives 1.5-3x in performance for the (typeflow) phase.
      */
-    private static TypeState allocationInsensitiveSpeculativeUnion1(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2, boolean resultCanBeNull) {
+    private static TypeState allocationInsensitiveSpeculativeUnion1(PointsToAnalysis bb, ContextSensitiveMultiTypeState s1, ContextSensitiveMultiTypeState s2, boolean resultCanBeNull) {
         if (s1.typesBitSet().length() >= s2.typesBitSet().length()) {
             long[] bits1 = TypeStateUtils.extractBitSetField(s1.typesBitSet());
             long[] bits2 = TypeStateUtils.extractBitSetField(s2.typesBitSet());
-            assert s2.typesBitSet().cardinality() == s2.objects().length : "Cardinality and length of objects must match.";
+            assert s2.typesBitSet().cardinality() == s2.objects.length : "Cardinality and length of objects must match.";
 
             boolean speculate = true;
             int numberOfWords = Math.min(bits1.length, bits2.length);
@@ -699,12 +770,12 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
         return doUnion2(bb, s1, s2, resultCanBeNull, 0, 0);
     }
 
-    private static TypeState allocationSensitiveSpeculativeUnion1(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2, boolean resultCanBeNull) {
+    private static TypeState allocationSensitiveSpeculativeUnion1(PointsToAnalysis bb, ContextSensitiveMultiTypeState s1, ContextSensitiveMultiTypeState s2, boolean resultCanBeNull) {
         int idx1 = 0;
         int idx2 = 0;
         AnalysisPolicy analysisPolicy = bb.analysisPolicy();
-        AnalysisObject[] so1 = s1.objects();
-        AnalysisObject[] so2 = s2.objects();
+        AnalysisObject[] so1 = s1.objects;
+        AnalysisObject[] so2 = s2.objects;
         while (idx1 < so1.length && idx2 < so2.length) {
             AnalysisObject o1 = so1[idx1];
             AnalysisObject o2 = so2[idx2];
@@ -736,22 +807,22 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
     private static final ThreadLocal<UnsafeArrayListClosable<AnalysisObject>> doUnion2TL = new ThreadLocal<>();
     private static final ThreadLocal<UnsafeArrayListClosable<AnalysisObject>> doUnion2ObjectsTL = new ThreadLocal<>();
 
-    private static TypeState doUnion2(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2, boolean resultCanBeNull, int startId1, int startId2) {
-        try (UnsafeArrayListClosable<AnalysisObject> resultObjectsClosable = getTLArrayList(doUnion2TL, s1.objects().length + s2.objects().length)) {
+    private static TypeState doUnion2(PointsToAnalysis bb, ContextSensitiveMultiTypeState s1, ContextSensitiveMultiTypeState s2, boolean resultCanBeNull, int startId1, int startId2) {
+        try (UnsafeArrayListClosable<AnalysisObject> resultObjectsClosable = getTLArrayList(doUnion2TL, s1.objects.length + s2.objects.length)) {
             UnsafeArrayList<AnalysisObject> resultObjects = resultObjectsClosable.list();
             /* Add the beginning of the s1 list that we already walked above. */
-            AnalysisObject[] objects = s1.objects();
+            AnalysisObject[] objects = s1.objects;
             resultObjects.addAll(objects, 0, startId1);
 
             int idx1 = startId1;
             int idx2 = startId2;
 
             /* Create the union of the overlapping sections of the s1 and s2. */
-            try (UnsafeArrayListClosable<AnalysisObject> tlUnionObjectsClosable = getTLArrayList(doUnion2ObjectsTL, s1.objects().length + s2.objects().length)) {
+            try (UnsafeArrayListClosable<AnalysisObject> tlUnionObjectsClosable = getTLArrayList(doUnion2ObjectsTL, s1.objects.length + s2.objects.length)) {
                 UnsafeArrayList<AnalysisObject> unionObjects = tlUnionObjectsClosable.list();
 
-                AnalysisObject[] so1 = s1.objects();
-                AnalysisObject[] so2 = s2.objects();
+                AnalysisObject[] so1 = s1.objects;
+                AnalysisObject[] so2 = s2.objects;
                 AnalysisPolicy analysisPolicy = bb.analysisPolicy();
                 while (idx1 < so1.length && idx2 < so2.length) {
                     AnalysisObject o1 = so1[idx1];
@@ -837,10 +908,10 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
              * sub-list wrappers. Then ArrayList.addAll() calls System.arraycopy() which should be
              * more efficient than copying one element at a time.
              */
-            if (idx1 < s1.objects().length) {
-                resultObjects.addAll(s1.objects(), idx1, s1.objects().length);
-            } else if (idx2 < s2.objects().length) {
-                resultObjects.addAll(s2.objects(), idx2, s2.objects().length);
+            if (idx1 < s1.objects.length) {
+                resultObjects.addAll(s1.objects, idx1, s1.objects.length);
+            } else if (idx2 < s2.objects.length) {
+                resultObjects.addAll(s2.objects, idx2, s2.objects.length);
             }
 
             assert resultObjects.size() > 1 : "The result state of a (Multi U Multi) operation must have at least 2 objects";
@@ -883,7 +954,7 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
         boolean resultCanBeNull = s1.canBeNull() && s2.canBeNull();
         if (s1.containsType(s2.exactType())) {
             /* The s2's type is contained in s1, so pick all objects of the same type from s1. */
-            AnalysisObject[] resultObjects = s1.objectsArray(s2.exactType());
+            AnalysisObject[] resultObjects = ((ContextSensitiveMultiTypeState) s1).objectsArray(s2.exactType());
             /* All objects must have the same type. */
             assert TypeStateUtils.holdsSingleTypeState(resultObjects);
             return new ContextSensitiveSingleTypeState(bb, resultCanBeNull, bb.analysisPolicy().makeProperties(bb, resultObjects), s2.exactType(), resultObjects);
@@ -893,7 +964,10 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
     }
 
     @Override
-    public TypeState doIntersection(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2) {
+    public TypeState doIntersection(PointsToAnalysis bb, MultiTypeState state1, MultiTypeState state2) {
+        ContextSensitiveMultiTypeState s1 = (ContextSensitiveMultiTypeState) state1;
+        ContextSensitiveMultiTypeState s2 = (ContextSensitiveMultiTypeState) state2;
+
         assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(s2) : "Current implementation limitation.";
 
         boolean resultCanBeNull = s1.canBeNull() && s2.canBeNull();
@@ -902,14 +976,14 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
          * No need for a deep equality check (which would need to iterate the arrays), since the
          * speculation logic below is doing that anyway.
          */
-        if (s1.objects() == s2.objects()) {
+        if (s1.objects == s2.objects) {
             return s1.forCanBeNull(bb, resultCanBeNull);
         }
 
         return doIntersection0(bb, s1, s2, resultCanBeNull);
     }
 
-    private static TypeState doIntersection0(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2, boolean resultCanBeNull) {
+    private static TypeState doIntersection0(PointsToAnalysis bb, ContextSensitiveMultiTypeState s1, ContextSensitiveMultiTypeState s2, boolean resultCanBeNull) {
         /* Speculate that s1 and s2 have either the same types, or no types in common. */
 
         if (s1.typesBitSet().equals(s2.typesBitSet())) {
@@ -925,7 +999,7 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
         return doIntersection1(bb, s1, s2, resultCanBeNull);
     }
 
-    private static TypeState doIntersection1(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2, boolean resultCanBeNull) {
+    private static TypeState doIntersection1(PointsToAnalysis bb, ContextSensitiveMultiTypeState s1, ContextSensitiveMultiTypeState s2, boolean resultCanBeNull) {
         /*
          * Speculate that s2 contains all types of s1, i.e., the filter is broader than s1, thus the
          * result is s1.
@@ -933,8 +1007,8 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
 
         int idx1 = 0;
         int idx2 = 0;
-        AnalysisObject[] so1 = s1.objects();
-        AnalysisObject[] so2 = s2.objects();
+        AnalysisObject[] so1 = s1.objects;
+        AnalysisObject[] so2 = s2.objects;
         while (idx2 < so2.length) {
             AnalysisObject o1 = so1[idx1];
             AnalysisObject o2 = so2[idx2];
@@ -973,15 +1047,15 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
 
     private static ThreadLocal<ListUtils.UnsafeArrayListClosable<AnalysisObject>> intersectionArrayListTL = new ThreadLocal<>();
 
-    private static TypeState doIntersection2(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2, boolean resultCanBeNull, int idx1Param, int idx2Param) {
+    private static TypeState doIntersection2(PointsToAnalysis bb, ContextSensitiveMultiTypeState s1, ContextSensitiveMultiTypeState s2, boolean resultCanBeNull, int idx1Param, int idx2Param) {
 
         try (ListUtils.UnsafeArrayListClosable<AnalysisObject> tlArrayClosable = ListUtils.getTLArrayList(intersectionArrayListTL, 256)) {
             ListUtils.UnsafeArrayList<AnalysisObject> resultObjects = tlArrayClosable.list();
 
-            AnalysisObject[] so1 = s1.objects();
-            AnalysisObject[] so2 = s2.objects();
-            int[] types1 = ((ContextSensitiveMultiTypeState) s1).getObjectTypeIds();
-            int[] types2 = ((ContextSensitiveMultiTypeState) s2).getObjectTypeIds();
+            AnalysisObject[] so1 = s1.objects;
+            AnalysisObject[] so2 = s2.objects;
+            int[] types1 = s1.getObjectTypeIds();
+            int[] types2 = s2.getObjectTypeIds();
             int idx1 = idx1Param;
             int idx2 = idx2Param;
             int l1 = so1.length;
@@ -1010,7 +1084,7 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
                 /* Copy the recently touched first */
                 resultObjects.copyToArray(objects, idx1Param);
                 /* Add the beginning of the s1 list that we already walked above. */
-                System.arraycopy(s1.objects(), 0, objects, 0, idx1Param);
+                System.arraycopy(s1.objects, 0, objects, 0, idx1Param);
 
                 if (TypeStateUtils.holdsSingleTypeState(objects, objects.length)) {
                     /* Multiple objects of the same type. */
@@ -1051,7 +1125,11 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
      */
 
     @Override
-    public TypeState doSubtraction(PointsToAnalysis bb, MultiTypeState s1, SingleTypeState s2) {
+    public TypeState doSubtraction(PointsToAnalysis bb, MultiTypeState state1, SingleTypeState state2) {
+
+        ContextSensitiveMultiTypeState s1 = (ContextSensitiveMultiTypeState) state1;
+        ContextSensitiveSingleTypeState s2 = (ContextSensitiveSingleTypeState) state2;
+
         boolean resultCanBeNull = s1.canBeNull() && !s2.canBeNull();
         if (s1.containsType(s2.exactType())) {
             /* s2 is contained in s1, so remove all objects of the same type from s1. */
@@ -1061,12 +1139,12 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
 
             /* Find the range of objects of s2.exactType() in s1. */
             ContextSensitiveMultiTypeState.Range typeRange = ((ContextSensitiveMultiTypeState) s1).findTypeRange(s2.exactType());
-            int newLength = s1.objects().length - (typeRange.right() - typeRange.left());
+            int newLength = s1.objects.length - (typeRange.right() - typeRange.left());
             AnalysisObject[] resultObjects = new AnalysisObject[newLength];
 
             /* Copy all the objects in s1 but the ones inside the range to the result list. */
-            System.arraycopy(s1.objects(), 0, resultObjects, 0, typeRange.left());
-            System.arraycopy(s1.objects(), typeRange.right(), resultObjects, typeRange.left(), s1.objects().length - typeRange.right());
+            System.arraycopy(s1.objects, 0, resultObjects, 0, typeRange.left());
+            System.arraycopy(s1.objects, typeRange.right(), resultObjects, typeRange.left(), s1.objects.length - typeRange.right());
 
             if (resultObjects.length == 1) {
                 return new ContextSensitiveSingleTypeState(bb, resultCanBeNull, bb.analysisPolicy().makeProperties(bb, resultObjects[0]), resultObjects[0].type(), resultObjects[0]);
@@ -1084,20 +1162,23 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
     }
 
     @Override
-    public TypeState doSubtraction(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2) {
+    public TypeState doSubtraction(PointsToAnalysis bb, MultiTypeState state1, MultiTypeState state2) {
+        ContextSensitiveMultiTypeState s1 = (ContextSensitiveMultiTypeState) state1;
+        ContextSensitiveMultiTypeState s2 = (ContextSensitiveMultiTypeState) state2;
+
         boolean resultCanBeNull = s1.canBeNull() && !s2.canBeNull();
         /*
          * No need for a deep equality check (which would need to iterate the arrays), since the
          * speculation logic below is doing that anyway.
          */
-        if (s1.objects() == s2.objects()) {
+        if (s1.objects == s2.objects) {
             return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);
         }
 
         return doSubtraction0(bb, s1, s2, resultCanBeNull);
     }
 
-    private static TypeState doSubtraction0(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2, boolean resultCanBeNull) {
+    private static TypeState doSubtraction0(PointsToAnalysis bb, ContextSensitiveMultiTypeState s1, ContextSensitiveMultiTypeState s2, boolean resultCanBeNull) {
         /* Speculate that s1 and s2 have either the same types, or no types in common. */
 
         if (s1.typesBitSet().equals(s2.typesBitSet())) {
@@ -1113,7 +1194,7 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
         return doSubtraction1(bb, s1, s2, resultCanBeNull);
     }
 
-    private static TypeState doSubtraction1(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2, boolean resultCanBeNull) {
+    private static TypeState doSubtraction1(PointsToAnalysis bb, ContextSensitiveMultiTypeState s1, ContextSensitiveMultiTypeState s2, boolean resultCanBeNull) {
         /*
          * Speculate that s1 and s2 have no overlap, i.e., they don't have any objects in common. In
          * that case, the result is just s1.
@@ -1121,8 +1202,8 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
         int idx1 = 0;
         int idx2 = 0;
 
-        AnalysisObject[] so1 = s1.objects();
-        AnalysisObject[] so2 = s2.objects();
+        AnalysisObject[] so1 = s1.objects;
+        AnalysisObject[] so2 = s2.objects;
         while (true) {
             AnalysisObject o1 = so1[idx1];
             AnalysisObject o2 = so2[idx2];
@@ -1149,14 +1230,14 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
         return doSubtraction2(bb, s1, s2, resultCanBeNull, idx1, idx2);
     }
 
-    private static TypeState doSubtraction2(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2, boolean resultCanBeNull, int idx1Param, int idx2Param) {
+    private static TypeState doSubtraction2(PointsToAnalysis bb, ContextSensitiveMultiTypeState s1, ContextSensitiveMultiTypeState s2, boolean resultCanBeNull, int idx1Param, int idx2Param) {
         try (ListUtils.UnsafeArrayListClosable<AnalysisObject> tlArrayClosable = ListUtils.getTLArrayList(intersectionArrayListTL, 256)) {
             ListUtils.UnsafeArrayList<AnalysisObject> resultObjects = tlArrayClosable.list();
 
-            AnalysisObject[] so1 = s1.objects();
-            AnalysisObject[] so2 = s2.objects();
-            int[] types1 = ((ContextSensitiveMultiTypeState) s1).getObjectTypeIds();
-            int[] types2 = ((ContextSensitiveMultiTypeState) s2).getObjectTypeIds();
+            AnalysisObject[] so1 = s1.objects;
+            AnalysisObject[] so2 = s2.objects;
+            int[] types1 = s1.getObjectTypeIds();
+            int[] types2 = s2.getObjectTypeIds();
             int idx1 = idx1Param;
             int idx2 = idx2Param;
             int l1 = so1.length;
@@ -1176,7 +1257,7 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
                 }
             }
 
-            int remainder = s1.objects().length - idx1;
+            int remainder = s1.objects.length - idx1;
             int totalLength = idx1Param + resultObjects.size() + remainder;
 
             if (totalLength == 0) {
@@ -1186,9 +1267,9 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
                 /* Copy recently touched first */
                 resultObjects.copyToArray(objects, idx1Param);
                 /* leading elements */
-                System.arraycopy(s1.objects(), 0, objects, 0, idx1Param);
+                System.arraycopy(s1.objects, 0, objects, 0, idx1Param);
                 /* trailing elements (remainder) */
-                System.arraycopy(s1.objects(), idx1, objects, totalLength - remainder, remainder);
+                System.arraycopy(s1.objects, idx1, objects, totalLength - remainder, remainder);
 
                 if (TypeStateUtils.holdsSingleTypeState(objects, totalLength)) {
                     /* Multiple objects of the same type. */

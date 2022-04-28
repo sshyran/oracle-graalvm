@@ -180,43 +180,4 @@ public class ContextSensitiveAnalysisObject extends AnalysisObject {
     protected List<AnalysisObject> getAllObjectsMergedWith() {
         return merged ? Collections.singletonList(type().getContextInsensitiveAnalysisObject()) : Collections.emptyList();
     }
-
-    /**
-     * Returns the list of referenced objects, i.e., field objects or array elements discovered by
-     * the static analysis.
-     *
-     * Since this list is not updated during the analysis, for complete results this should only be
-     * called when the base analysis has finished.
-     */
-    public List<AnalysisObject> getReferencedObjects() {
-
-        if (referencedObjects == null) {
-
-            // TODO do we need to materialize the objects in a HashSet here, or could we just
-            // iterate over them?
-
-            HashSet<AnalysisObject> objectsSet = new HashSet<>();
-            if (this.type().isArray()) {
-                for (AnalysisObject object : arrayElementsTypeStore.readFlow().getState().objects()) {
-                    objectsSet.add(object);
-                }
-            } else {
-                if (instanceFieldsTypeStore != null) {
-                    for (int i = 0; i < instanceFieldsTypeStore.length(); i++) {
-                        FieldTypeStore fieldTypeStore = instanceFieldsTypeStore.get(i);
-                        if (fieldTypeStore != null) {
-                            FieldTypeFlow fieldFlow = ((UnifiedFieldTypeStore) fieldTypeStore).readWriteFlow();
-                            for (AnalysisObject object : fieldFlow.getState().objects()) {
-                                objectsSet.add(object);
-                            }
-                        }
-                    }
-                }
-            }
-
-            referencedObjects = new ArrayList<>(objectsSet);
-        }
-
-        return referencedObjects;
-    }
 }

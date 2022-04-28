@@ -22,7 +22,7 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-package com.oracle.graal.pointsto.typestate;
+package com.oracle.graal.pointsto.flow.context.bytecode;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -32,8 +32,11 @@ import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.flow.context.object.AnalysisObject;
 import com.oracle.graal.pointsto.meta.AnalysisType;
+import com.oracle.graal.pointsto.typestate.PointsToStats;
+import com.oracle.graal.pointsto.typestate.SingleTypeState;
+import com.oracle.graal.pointsto.typestate.TypeState;
 
-public class ContextSensitiveSingleTypeState extends SingleTypeState {
+public class ContextSensitiveSingleTypeState extends SingleTypeState implements ContextSensitiveTypeState {
     /** The objects of this type state. */
     protected final AnalysisObject[] objects;
 
@@ -111,18 +114,13 @@ public class ContextSensitiveSingleTypeState extends SingleTypeState {
     }
 
     @Override
-    public final AnalysisObject[] objects() {
+    public final AnalysisObject[] objectsArray() {
         return objects;
     }
 
     @Override
-    public Iterable<AnalysisObject> objectsIterable() {
+    public Iterable<AnalysisObject> objects() {
         return Arrays.asList(objects);
-    }
-
-    @Override
-    public AnalysisObject[] objectsArray(AnalysisType type) {
-        return exactType().equals(type) ? objects : null;
     }
 
     @Override

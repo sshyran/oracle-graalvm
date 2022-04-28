@@ -26,7 +26,6 @@ package com.oracle.graal.pointsto.typestate;
 
 import java.util.BitSet;
 import java.util.Iterator;
-import java.util.stream.Collectors;
 
 import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.PointsToAnalysis;
@@ -95,15 +94,25 @@ public class MultiTypeState extends TypeState {
         return typesCount;
     }
 
-    /** Returns the objects as an array. */
     @Override
-    public AnalysisObject[] objects() {
-        return typesStream(bb).map(AnalysisType::getContextInsensitiveAnalysisObject).toArray(AnalysisObject[]::new);
-    }
+    public Iterable<AnalysisObject> objects() {
+        return () -> new Iterator<>() {
 
-    @Override
-    public Iterable<AnalysisObject> objectsIterable() {
-        return typesStream(bb).map(AnalysisType::getContextInsensitiveAnalysisObject).collect(Collectors.toList());
+            /** Initialize to the index of the first set bit. */
+            private int currentTypeId = typesBitSet.nextSetBit(0);
+
+            @Override
+            public boolean hasNext() {
+                return currentTypeId >= 0;
+            }
+
+            @Override
+            public AnalysisObject next() {
+                AnalysisType next = bb.getUniverse().getType(currentTypeId);
+                currentTypeId = typesBitSet.nextSetBit(currentTypeId + 1);
+                return next.getContextInsensitiveAnalysisObject();
+            }
+        };
     }
 
     @Override
@@ -157,16 +166,6 @@ public class MultiTypeState extends TypeState {
     }
 
     @Override
-    public TypeState exactTypeState(PointsToAnalysis bb, AnalysisType exactType) {
-        if (containsType(exactType)) {
-            AnalysisObject[] resultObjects = objectsArray(exactType);
-            return bb.analysisPolicy().singleTypeState(bb, canBeNull, bb.analysisPolicy().makeProperties(bb, resultObjects), exactType, resultObjects);
-        } else {
-            return EmptyTypeState.SINGLETON;
-        }
-    }
-
-    @Override
     public TypeState forCanBeNull(PointsToAnalysis bb, boolean resultCanBeNull) {
         if (resultCanBeNull == this.canBeNull()) {
             return this;
@@ -174,11 +173,6 @@ public class MultiTypeState extends TypeState {
             /* Just flip the canBeNull flag and copy the rest of the values from this. */
             return new MultiTypeState(bb, resultCanBeNull, this);
         }
-    }
-
-    @Override
-    public AnalysisObject[] objectsArray(AnalysisType type) {
-        throw AnalysisError.shouldNotReachHere("unimplemented");
     }
 
     @Override

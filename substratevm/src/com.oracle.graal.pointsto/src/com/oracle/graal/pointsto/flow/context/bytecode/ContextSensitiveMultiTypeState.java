@@ -22,7 +22,7 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-package com.oracle.graal.pointsto.typestate;
+package com.oracle.graal.pointsto.flow.context.bytecode;
 
 import java.util.Arrays;
 import java.util.BitSet;
@@ -33,8 +33,12 @@ import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.flow.context.object.AnalysisObject;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.meta.AnalysisUniverse;
+import com.oracle.graal.pointsto.typestate.MultiTypeState;
+import com.oracle.graal.pointsto.typestate.PointsToStats;
+import com.oracle.graal.pointsto.typestate.TypeState;
+import com.oracle.graal.pointsto.typestate.TypeStateUtils;
 
-public class ContextSensitiveMultiTypeState extends MultiTypeState {
+public class ContextSensitiveMultiTypeState extends MultiTypeState implements ContextSensitiveTypeState {
 
     /** The objects of this type state. */
     protected final AnalysisObject[] objects;
@@ -120,12 +124,12 @@ public class ContextSensitiveMultiTypeState extends MultiTypeState {
 
     /** Returns the objects as an array. */
     @Override
-    public final AnalysisObject[] objects() {
+    public final AnalysisObject[] objectsArray() {
         return objects;
     }
 
     @Override
-    public Iterable<AnalysisObject> objectsIterable() {
+    public Iterable<AnalysisObject> objects() {
         return Arrays.asList(objects);
     }
 
@@ -137,11 +141,6 @@ public class ContextSensitiveMultiTypeState extends MultiTypeState {
     @Override
     public AnalysisType exactType() {
         return typesCount == 1 ? objects[0].type() : null;
-    }
-
-    @Override
-    public int typesCount() {
-        return typesCount;
     }
 
     public BitSet typesBitSet() {
@@ -267,7 +266,6 @@ public class ContextSensitiveMultiTypeState extends MultiTypeState {
         return Range.range(firstIdx + 1, lastIdx);
     }
 
-    @Override
     public AnalysisObject[] objectsArray(AnalysisType type) {
         Range typeRange = findTypeRange(type);
         return Arrays.copyOfRange(objects, typeRange.left, typeRange.right);

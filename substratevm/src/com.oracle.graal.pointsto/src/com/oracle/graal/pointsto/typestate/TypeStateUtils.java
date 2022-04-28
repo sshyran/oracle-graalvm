@@ -89,7 +89,7 @@ public class TypeStateUtils {
         return false;
     }
 
-    static void trimBitSetToSize(BitSet bs) {
+    public static void trimBitSetToSize(BitSet bs) {
         try {
             trimToSizeAccess.invokeExact(bs);
         } catch (Throwable t) {
@@ -338,7 +338,7 @@ public class TypeStateUtils {
      * it stores is the set of types.
      */
     public static boolean isContextInsensitiveTypeState(TypeState state) {
-        for (AnalysisObject object : state.objectsIterable()) {
+        for (AnalysisObject object : state.objects()) {
             if (!object.isContextInsensitiveObject()) {
                 return false;
             }

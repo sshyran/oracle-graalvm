@@ -334,7 +334,7 @@ public class PointsToStats {
     private static final AtomicInteger nextStateId = new AtomicInteger();
     private static ConcurrentHashMap<TypeState, AtomicInteger> typeStateStats = new ConcurrentHashMap<>();
 
-    static void registerTypeState(PointsToAnalysis bb, TypeState state) {
+    public static void registerTypeState(PointsToAnalysis bb, TypeState state) {
 
         if (!bb.reportAnalysisStatistics()) {
             return;

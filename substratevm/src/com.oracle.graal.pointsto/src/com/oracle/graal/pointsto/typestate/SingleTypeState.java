@@ -24,10 +24,7 @@
  */
 package com.oracle.graal.pointsto.typestate;
 
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.BitSet;
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
@@ -109,18 +106,8 @@ public class SingleTypeState extends TypeState {
     }
 
     @Override
-    public AnalysisObject[] objects() {
-        return new AnalysisObject[]{type.getContextInsensitiveAnalysisObject()};
-    }
-
-    @Override
-    public Iterable<AnalysisObject> objectsIterable() {
+    public Iterable<AnalysisObject> objects() {
         return List.of(type.getContextInsensitiveAnalysisObject());
-    }
-
-    @Override
-    public AnalysisObject[] objectsArray(AnalysisType type) {
-        return exactType().equals(type) ? objects() : null;
     }
 
     @Override
@@ -145,15 +132,6 @@ public class SingleTypeState extends TypeState {
     @Override
     public final boolean canBeNull() {
         return canBeNull;
-    }
-
-    @Override
-    public final TypeState exactTypeState(PointsToAnalysis bb, AnalysisType exactType) {
-        if (this.containsType(exactType)) {
-            return this;
-        } else {
-            return EmptyTypeState.SINGLETON;
-        }
     }
 
     @Override

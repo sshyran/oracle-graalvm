@@ -22,7 +22,7 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-package com.oracle.graal.pointsto;
+package com.oracle.graal.pointsto.flow.context.free;
 
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
@@ -31,9 +31,10 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
-import com.oracle.graal.pointsto.flow.MethodTypeFlow;
 import org.graalvm.compiler.options.OptionValues;
 
+import com.oracle.graal.pointsto.AnalysisPolicy;
+import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.constraints.UnsupportedFeatureException;
 import com.oracle.graal.pointsto.flow.AbstractSpecialInvokeTypeFlow;
 import com.oracle.graal.pointsto.flow.AbstractVirtualInvokeTypeFlow;
@@ -41,10 +42,10 @@ import com.oracle.graal.pointsto.flow.ActualReturnTypeFlow;
 import com.oracle.graal.pointsto.flow.CloneTypeFlow;
 import com.oracle.graal.pointsto.flow.ContextInsensitiveFieldTypeFlow;
 import com.oracle.graal.pointsto.flow.MethodFlowsGraph;
+import com.oracle.graal.pointsto.flow.MethodTypeFlow;
 import com.oracle.graal.pointsto.flow.TypeFlow;
 import com.oracle.graal.pointsto.flow.context.AnalysisContext;
 import com.oracle.graal.pointsto.flow.context.BytecodeLocation;
-import com.oracle.graal.pointsto.flow.context.free.DefaultAnalysisContextPolicy;
 import com.oracle.graal.pointsto.flow.context.object.AnalysisObject;
 import com.oracle.graal.pointsto.meta.AnalysisField;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
@@ -60,7 +61,6 @@ import com.oracle.graal.pointsto.typestore.ArrayElementsTypeStore;
 import com.oracle.graal.pointsto.typestore.FieldTypeStore;
 import com.oracle.graal.pointsto.typestore.UnifiedArrayElementsTypeStore;
 import com.oracle.graal.pointsto.typestore.UnifiedFieldTypeStore;
-import com.oracle.graal.pointsto.util.AnalysisError;
 
 import jdk.vm.ci.code.BytecodePosition;
 import jdk.vm.ci.meta.JavaConstant;
@@ -552,7 +552,7 @@ public class DefaultAnalysisPolicy extends AnalysisPolicy {
         if (resultTypesBitSet.cardinality() == 0) {
             return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);
         } else if (resultTypesBitSet.cardinality() == 1) {
-            AnalysisType type = bb.universe.getType(resultTypesBitSet.nextSetBit(0));
+            AnalysisType type = bb.getUniverse().getType(resultTypesBitSet.nextSetBit(0));
             return new SingleTypeState(bb, resultCanBeNull, 0, type);
         } else {
             MultiTypeState result = new MultiTypeState(bb, resultCanBeNull, 0, resultTypesBitSet);
@@ -577,7 +577,7 @@ public class DefaultAnalysisPolicy extends AnalysisPolicy {
             BitSet resultTypesBitSet = TypeStateUtils.clear(s1.typesBitSet(), s2.exactType().getId());
             assert resultTypesBitSet.cardinality() > 0;
             if (resultTypesBitSet.cardinality() == 1) {
-                AnalysisType type = bb.universe.getType(resultTypesBitSet.nextSetBit(0));
+                AnalysisType type = bb.getUniverse().getType(resultTypesBitSet.nextSetBit(0));
                 return new SingleTypeState(bb, resultCanBeNull, 0, type);
             } else {
                 return new MultiTypeState(bb, resultCanBeNull, 0, resultTypesBitSet);
@@ -614,7 +614,7 @@ public class DefaultAnalysisPolicy extends AnalysisPolicy {
         if (resultTypesBitSet.cardinality() == 0) {
             return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);
         } else if (resultTypesBitSet.cardinality() == 1) {
-            AnalysisType type = bb.universe.getType(resultTypesBitSet.nextSetBit(0));
+            AnalysisType type = bb.getUniverse().getType(resultTypesBitSet.nextSetBit(0));
             return new SingleTypeState(bb, resultCanBeNull, 0, type);
         } else {
             return new MultiTypeState(bb, resultCanBeNull, 0, resultTypesBitSet);

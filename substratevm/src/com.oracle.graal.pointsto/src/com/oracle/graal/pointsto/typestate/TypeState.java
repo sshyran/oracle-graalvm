@@ -25,24 +25,22 @@
 package com.oracle.graal.pointsto.typestate;
 
 import java.lang.reflect.Modifier;
-import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
-import com.oracle.graal.pointsto.AnalysisPolicy;
 import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.api.PointstoOptions;
 import com.oracle.graal.pointsto.flow.context.AnalysisContext;
 import com.oracle.graal.pointsto.flow.context.BytecodeLocation;
+import com.oracle.graal.pointsto.flow.context.bytecode.ContextSensitiveMultiTypeState;
 import com.oracle.graal.pointsto.flow.context.object.AnalysisObject;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.util.BitArrayUtils;
 
-import com.oracle.graal.pointsto.util.ListUtils;
 import jdk.vm.ci.meta.JavaConstant;
 
 public abstract class TypeState {
@@ -97,13 +95,7 @@ public abstract class TypeState {
     /** Get the number of objects. */
     public abstract int objectsCount();
 
-    /** Returns the objects as an array. */
-    public abstract AnalysisObject[] objects();
-
-    public abstract Iterable<AnalysisObject> objectsIterable();
-
-    /** Returns the objects corresponding to the type. It copies those objects to a new array. */
-    public abstract AnalysisObject[] objectsArray(AnalysisType type);
+    public abstract Iterable<AnalysisObject> objects();
 
     /**
      * Provides an iterator for the objects corresponding to the type. The objects are returned from
@@ -121,96 +113,15 @@ public abstract class TypeState {
 
     /** Provides a stream for the objects. */
     public Stream<AnalysisObject> objectsStream() {
-        return Arrays.stream(objects());
-    }
-
-    /** Returns true if this type state contains the object, otherwise it returns false. */
-    public boolean containsObject(AnalysisObject object) {
-        /* AnalysisObject implements Comparable and the objects array is always sorted by ID. */
-        return containsType(object.type()) && Arrays.binarySearch(objects(), object) >= 0;
-    }
-
-    /**
-     * Provides a special iterator for the type state. It iterates over analysis types and objects
-     * in tandem doing a single pass over the objects array. See {@link TypesObjectsIterator} for a
-     * complete explanation.
-     */
-    public TypesObjectsIterator getTypesObjectsIterator() {
-        return new TypesObjectsIterator(this);
-    }
-
-    /**
-     * This is a special iterator for the type state. It iterates over analysis types and objects in
-     * tandem doing a single pass over the objects array. It relies on the fact that the types and
-     * objects are sorted by ID. It is meant for situations where the types need some pre-processing
-     * or checking before processing their respective objects, e.g., as in virtual method resolution
-     * for InvokeTypeFlow. It those situations it avoids iterating over the types first and then
-     * searching for the range of objects corresponding to that type. When only objects, or only
-     * types, or only objects of a certain type need to be iterated use the other provided
-     * iterators. A correct use of this iterator is as follows:
-     *
-     * <code>
-     * TypesObjectsIterator toi = state.getTypesObjectsIterator();
-     *
-     * while(toi.hasNextType()) {
-     *      AnalysisType t = toi.nextType();
-     *      // use type here
-     *
-     *      while(toi.hasNextObject(t)) {
-     *          AnalysisObject o = toi.nextObject(t);
-     *          // use object here
-     *      }
-     * }
-     * </code>
-     */
-    public static class TypesObjectsIterator {
-
-        private final TypeState state;
-        private int typeIdx = 0;
-        private int objectIdx = 0;
-
-        public TypesObjectsIterator(TypeState state) {
-            this.state = state;
-        }
-
-        /**
-         * Returns true if there is a next type in the objects array, i.e., there are objects of a
-         * type other than the current type.
-         */
-        public boolean hasNextType() {
-            return typeIdx < state.typesCount();
-        }
-
-        /** Returns true if there are more objects of the current type. */
-        public boolean hasNextObject(AnalysisType type) {
-            return objectIdx < state.objects().length && state.objects()[objectIdx].getTypeId() == type.getId();
-        }
-
-        /** Gets the next type. */
-        public AnalysisType nextType() {
-            /* Check that there is a next type. */
-            assert hasNextType();
-            /* Increment the type index. */
-            typeIdx++;
-            /* Return the type at the 'objectIdx. */
-            return state.objects()[objectIdx].type();
-        }
-
-        /** Gets the next object. */
-        public AnalysisObject nextObject(AnalysisType type) {
-            /* Check that there is a next object of the desired type. */
-            assert hasNextObject(type);
-            /* Return the next object and increment objectIdx. */
-            return state.objects()[objectIdx++];
-        }
+        return StreamSupport.stream(objects().spliterator(), false);
     }
 
     public boolean isAllocation() {
-        return objects().length == 1 && objects()[0].isAllocationContextSensitiveObject();
+        return objectsCount() == 1 && objectsStream().findFirst().get().isAllocationContextSensitiveObject();
     }
 
     public boolean isConstant() {
-        return objects().length == 1 && objects()[0].isConstantContextSensitiveObject();
+        return objectsCount() == 1 && objectsStream().findFirst().get().isConstantContextSensitiveObject();
     }
 
     public boolean isEmpty() {
@@ -238,13 +149,6 @@ public abstract class TypeState {
     public boolean isMerged() {
         return false;
     }
-
-    /**
-     * This method is needed for accessing the SingleTypeState associated with an specific type of a
-     * MutiTypeState, e.g. for transferring the state from a virtual invoke type flow to the formal
-     * receiver flow of a specific callee resolved on the specified type.
-     */
-    public abstract TypeState exactTypeState(PointsToAnalysis bb, AnalysisType exactType);
 
     public boolean verifyDeclaredType(BigBang bb, AnalysisType declaredType) {
         if (declaredType != null) {
@@ -501,11 +405,6 @@ final class EmptyTypeState extends TypeState {
     }
 
     @Override
-    public AnalysisObject[] objectsArray(AnalysisType type) {
-        return AnalysisObject.EMPTY_ARRAY;
-    }
-
-    @Override
     public Iterator<AnalysisObject> objectsIterator(AnalysisType type) {
         return Collections.emptyIterator();
     }
@@ -513,16 +412,6 @@ final class EmptyTypeState extends TypeState {
     @Override
     public boolean containsType(AnalysisType exactType) {
         return false;
-    }
-
-    @Override
-    public boolean containsObject(AnalysisObject object) {
-        return false;
-    }
-
-    @Override
-    public TypeState exactTypeState(PointsToAnalysis bb, AnalysisType exactType) {
-        return this;
     }
 
     @Override
@@ -536,12 +425,7 @@ final class EmptyTypeState extends TypeState {
     }
 
     @Override
-    public AnalysisObject[] objects() {
-        return AnalysisObject.EMPTY_ARRAY;
-    }
-
-    @Override
-    public Iterable<AnalysisObject> objectsIterable() {
+    public Iterable<AnalysisObject> objects() {
         return Collections.emptyList();
     }
 
@@ -598,23 +482,8 @@ final class NullTypeState extends TypeState {
     }
 
     @Override
-    public AnalysisObject[] objectsArray(AnalysisType type) {
-        return AnalysisObject.EMPTY_ARRAY;
-    }
-
-    @Override
     public boolean containsType(AnalysisType exactType) {
         return false;
-    }
-
-    @Override
-    public boolean containsObject(AnalysisObject object) {
-        return false;
-    }
-
-    @Override
-    public TypeState exactTypeState(PointsToAnalysis bb, AnalysisType exactType) {
-        return this;
     }
 
     @Override
@@ -633,12 +502,7 @@ final class NullTypeState extends TypeState {
     }
 
     @Override
-    public AnalysisObject[] objects() {
-        return AnalysisObject.EMPTY_ARRAY;
-    }
-
-    @Override
-    public Iterable<AnalysisObject> objectsIterable() {
+    public Iterable<AnalysisObject> objects() {
         return Collections.emptyList();
     }
 
