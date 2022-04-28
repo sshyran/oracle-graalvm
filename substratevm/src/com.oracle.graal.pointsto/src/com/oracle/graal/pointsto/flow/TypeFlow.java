@@ -363,6 +363,7 @@ public abstract class TypeFlow<T> {
             notifyUseOfSaturation(bb, use);
             return false;
         }
+        // saturate
         if (doAddUse(bb, use, registerInput)) {
             if (propagateTypeState) {
                 if (isSaturated()) {

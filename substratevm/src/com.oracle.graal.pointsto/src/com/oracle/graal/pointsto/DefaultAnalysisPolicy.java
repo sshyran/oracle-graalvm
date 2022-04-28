@@ -26,6 +26,7 @@ package com.oracle.graal.pointsto;
 
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -50,11 +51,16 @@ import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.meta.AnalysisUniverse;
 import com.oracle.graal.pointsto.meta.PointsToAnalysisMethod;
+import com.oracle.graal.pointsto.typestate.MultiTypeState;
+import com.oracle.graal.pointsto.typestate.PointsToStats;
+import com.oracle.graal.pointsto.typestate.SingleTypeState;
 import com.oracle.graal.pointsto.typestate.TypeState;
+import com.oracle.graal.pointsto.typestate.TypeStateUtils;
 import com.oracle.graal.pointsto.typestore.ArrayElementsTypeStore;
 import com.oracle.graal.pointsto.typestore.FieldTypeStore;
 import com.oracle.graal.pointsto.typestore.UnifiedArrayElementsTypeStore;
 import com.oracle.graal.pointsto.typestore.UnifiedFieldTypeStore;
+import com.oracle.graal.pointsto.util.AnalysisError;
 
 import jdk.vm.ci.code.BytecodePosition;
 import jdk.vm.ci.meta.JavaConstant;
@@ -412,6 +418,207 @@ public class DefaultAnalysisPolicy extends AnalysisPolicy {
                 MethodFlowsGraph methodFlows = callee.getFlows(bb.contextPolicy().emptyContext());
                 return Collections.singletonList(methodFlows);
             }
+        }
+    }
+
+    @Override
+    public SingleTypeState singleTypeState(PointsToAnalysis bb, boolean canBeNull, int properties, AnalysisType type, AnalysisObject... objects) {
+        return new SingleTypeState(bb, canBeNull, properties, type, objects);
+    }
+
+    @Override
+    public MultiTypeState multiTypeState(PointsToAnalysis bb, boolean canBeNull, int properties, BitSet typesBitSet, AnalysisObject... objects) {
+        return new MultiTypeState(bb, canBeNull, properties, typesBitSet);
+    }
+
+    @Override
+    public TypeState doUnion(PointsToAnalysis bb, SingleTypeState s1, SingleTypeState s2) {
+        if (s1.equals(s2)) {
+            return s1;
+        }
+
+        boolean resultCanBeNull = s1.canBeNull() || s2.canBeNull();
+        if (s1.exactType().equals(s2.exactType())) {
+
+            /* The inputs have the same type, so the result is a SingleTypeState. */
+
+            /* Check if any of the states has the right null state. */
+            if (s1.canBeNull() == resultCanBeNull) {
+                return s1;
+            } else if (s2.canBeNull() == resultCanBeNull) {
+                return s2;
+            }
+            throw AnalysisError.shouldNotReachHere();
+        } else {
+            /* The inputs have different types, so the result is a MultiTypeState. */
+            /* We know the types, construct the types bit set without walking the objects. */
+            BitSet typesBitSet = new BitSet();
+            typesBitSet.set(s1.exactType().getId());
+            typesBitSet.set(s2.exactType().getId());
+
+            TypeState result = new MultiTypeState(bb, resultCanBeNull, 0, typesBitSet);
+            PointsToStats.registerUnionOperation(bb, s1, s2, result);
+            return result;
+        }
+    }
+
+    @Override
+    public TypeState doUnion(PointsToAnalysis bb, MultiTypeState s1, SingleTypeState s2) {
+        boolean resultCanBeNull = s1.canBeNull() || s2.canBeNull();
+
+        if (s1.containsType(s2.exactType())) {
+            /* Objects of the same type as s2 are contained in s1. */
+            return s1.forCanBeNull(bb, resultCanBeNull);
+        } else {
+            BitSet typesBitSet = TypeStateUtils.set(s1.typesBitSet(), s2.exactType().getId());
+            MultiTypeState result = new MultiTypeState(bb, resultCanBeNull, 0, typesBitSet);
+            PointsToStats.registerUnionOperation(bb, s1, s2, result);
+            return result;
+        }
+    }
+
+    @Override
+    public TypeState doUnion(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2) {
+        assert s1.objectsCount() >= s2.objectsCount();
+
+        boolean resultCanBeNull = s1.canBeNull() || s2.canBeNull();
+
+        /*
+         * No need for a deep equality check (which would need to iterate the arrays), since the
+         * speculation logic below is doing that anyway.
+         */
+        if (s1.typesBitSet() == s2.typesBitSet()) {
+            return s1.forCanBeNull(bb, resultCanBeNull);
+        }
+
+        /* Speculate that s1 is a superset of s2. */
+        if (TypeStateUtils.isSuperset(s1.typesBitSet(), s2.typesBitSet())) {
+            return s1.forCanBeNull(bb, resultCanBeNull);
+        }
+
+        /* Logical OR the type bit sets. */
+        BitSet resultTypesBitSet = TypeStateUtils.or(s1.typesBitSet(), s2.typesBitSet());
+
+        MultiTypeState result = new MultiTypeState(bb, resultCanBeNull, 0, resultTypesBitSet);
+        /* The result can be equal to s2 only if s1 and s2 have the same number of types. */
+        if (s1.typesCount() == s2.typesCount() && result.equals(s2)) {
+            return s2.forCanBeNull(bb, resultCanBeNull);
+        }
+
+        PointsToStats.registerUnionOperation(bb, s1, s2, result);
+
+        return result;
+
+    }
+
+    @Override
+    public TypeState doIntersection(PointsToAnalysis bb, MultiTypeState s1, SingleTypeState s2) {
+        /* See comment above for the limitation explanation. */
+        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(s2) : "Current implementation limitation.";
+
+        boolean resultCanBeNull = s1.canBeNull() && s2.canBeNull();
+        if (s1.containsType(s2.exactType())) {
+            /* The s2's type is contained in s1, so pick all objects of the same type from s1. */
+            // return new SingleTypeState(bb, resultCanBeNull, 0, s2.exactType());
+            return s2.forCanBeNull(bb, resultCanBeNull);
+        } else {
+            return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);
+        }
+    }
+
+    @Override
+    public TypeState doIntersection(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2) {
+        /* Speculate that s1 and s2 have either the same types, or no types in common. */
+        boolean resultCanBeNull = s1.canBeNull() && s2.canBeNull();
+
+        if (s1.typesBitSet().equals(s2.typesBitSet())) {
+            /* Speculate that s1 and s2 have the same types, i.e., the result is s1. */
+            return s1.forCanBeNull(bb, resultCanBeNull);
+        }
+
+        if (!s1.typesBitSet().intersects(s2.typesBitSet())) {
+            /* Speculate that s1 and s2 have no types in common, i.e., the result is empty. */
+            return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);
+        }
+
+        /*
+         * Speculate that s2 contains all types of s1, i.e., the filter is broader than s1, thus the
+         * result is s1.
+         */
+        if (TypeStateUtils.isSuperset(s2.typesBitSet(), s1.typesBitSet())) {
+            return s1.forCanBeNull(bb, resultCanBeNull);
+        }
+
+        BitSet resultTypesBitSet = TypeStateUtils.and(s1.typesBitSet(), s2.typesBitSet());
+        if (resultTypesBitSet.cardinality() == 0) {
+            return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);
+        } else if (resultTypesBitSet.cardinality() == 1) {
+            AnalysisType type = bb.universe.getType(resultTypesBitSet.nextSetBit(0));
+            return new SingleTypeState(bb, resultCanBeNull, 0, type);
+        } else {
+            MultiTypeState result = new MultiTypeState(bb, resultCanBeNull, 0, resultTypesBitSet);
+
+            /*
+             * The result can be equal to s1 if and only if s1 and s2 have the same type count.
+             */
+            if (s1.typesCount() == s2.typesCount() && result.equals(s1)) {
+                return s1.forCanBeNull(bb, resultCanBeNull);
+            }
+
+            return result;
+        }
+    }
+
+    @Override
+    public TypeState doSubtraction(PointsToAnalysis bb, MultiTypeState s1, SingleTypeState s2) {
+        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(s2) : "Current implementation limitation.";
+        boolean resultCanBeNull = s1.canBeNull() && !s2.canBeNull();
+        if (s1.containsType(s2.exactType())) {
+            /* s2 is contained in s1, so remove all objects of the same type from s1. */
+            BitSet resultTypesBitSet = TypeStateUtils.clear(s1.typesBitSet(), s2.exactType().getId());
+            assert resultTypesBitSet.cardinality() > 0;
+            if (resultTypesBitSet.cardinality() == 1) {
+                AnalysisType type = bb.universe.getType(resultTypesBitSet.nextSetBit(0));
+                return new SingleTypeState(bb, resultCanBeNull, 0, type);
+            } else {
+                return new MultiTypeState(bb, resultCanBeNull, 0, resultTypesBitSet);
+            }
+        } else {
+            return s1.forCanBeNull(bb, resultCanBeNull);
+        }
+    }
+
+    @Override
+    public TypeState doSubtraction(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2) {
+        boolean resultCanBeNull = s1.canBeNull() && !s2.canBeNull();
+
+        /* Speculate that s1 and s2 have either the same types, or no types in common. */
+        if (s1.typesBitSet().equals(s2.typesBitSet())) {
+            /* Speculate that s1 and s2 have the same types, i.e., the result is empty set. */
+            return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);
+        }
+
+        if (!s1.typesBitSet().intersects(s2.typesBitSet())) {
+            /* Speculate that s1 and s2 have no types in common, i.e., the result is s1. */
+            return s1.forCanBeNull(bb, resultCanBeNull);
+        }
+
+        /*
+         * Speculate that s2 contains all types of s1, i.e., the filter is broader than s1, thus the
+         * result is empty.
+         */
+        if (TypeStateUtils.isSuperset(s2.typesBitSet(), s1.typesBitSet())) {
+            return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);
+        }
+
+        BitSet resultTypesBitSet = TypeStateUtils.andNot(s1.typesBitSet(), s2.typesBitSet());
+        if (resultTypesBitSet.cardinality() == 0) {
+            return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);
+        } else if (resultTypesBitSet.cardinality() == 1) {
+            AnalysisType type = bb.universe.getType(resultTypesBitSet.nextSetBit(0));
+            return new SingleTypeState(bb, resultCanBeNull, 0, type);
+        } else {
+            return new MultiTypeState(bb, resultCanBeNull, 0, resultTypesBitSet);
         }
     }
 

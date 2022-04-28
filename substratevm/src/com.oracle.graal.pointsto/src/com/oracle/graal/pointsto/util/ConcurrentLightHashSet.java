@@ -164,7 +164,14 @@ public final class ConcurrentLightHashSet {
                  */
                 @SuppressWarnings("unchecked")
                 ConcurrentHashMap<T, Object> elementsMap = (ConcurrentHashMap<T, Object>) e;
-                return elementsMap.remove(element) != null;
+                boolean result = elementsMap.remove(element) != null;
+//                if (elementsMap.isEmpty()) {
+//                    // -> concurrent add !?
+//                    if (updater.compareAndSet(holder, e, null)) {
+//                        return true;
+//                    }
+//                }
+                return result;
             } else if (element.equals(e)) {
                 /*
                  * We have a match for the single element. Try to update the field directly to null

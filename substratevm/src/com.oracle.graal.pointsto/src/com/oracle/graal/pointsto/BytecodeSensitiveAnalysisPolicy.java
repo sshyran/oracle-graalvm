@@ -24,12 +24,15 @@
  */
 package com.oracle.graal.pointsto;
 
+import static com.oracle.graal.pointsto.util.ListUtils.getTLArrayList;
+
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import com.oracle.graal.pointsto.util.ListUtils;
 import org.graalvm.compiler.options.OptionValues;
 
 import com.oracle.graal.pointsto.api.PointstoOptions;
@@ -53,14 +56,22 @@ import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.meta.AnalysisUniverse;
 import com.oracle.graal.pointsto.meta.PointsToAnalysisMethod;
+import com.oracle.graal.pointsto.typestate.ContextSensitiveMultiTypeState;
+import com.oracle.graal.pointsto.typestate.ContextSensitiveSingleTypeState;
+import com.oracle.graal.pointsto.typestate.MultiTypeState;
+import com.oracle.graal.pointsto.typestate.PointsToStats;
+import com.oracle.graal.pointsto.typestate.SingleTypeState;
 import com.oracle.graal.pointsto.typestate.TypeState;
 import com.oracle.graal.pointsto.typestate.TypeState.TypesObjectsIterator;
+import com.oracle.graal.pointsto.typestate.TypeStateUtils;
 import com.oracle.graal.pointsto.typestore.ArrayElementsTypeStore;
 import com.oracle.graal.pointsto.typestore.FieldTypeStore;
 import com.oracle.graal.pointsto.typestore.SplitArrayElementsTypeStore;
 import com.oracle.graal.pointsto.typestore.SplitFieldTypeStore;
 import com.oracle.graal.pointsto.typestore.UnifiedArrayElementsTypeStore;
 import com.oracle.graal.pointsto.typestore.UnifiedFieldTypeStore;
+import com.oracle.graal.pointsto.util.ListUtils.UnsafeArrayList;
+import com.oracle.graal.pointsto.util.ListUtils.UnsafeArrayListClosable;
 
 import jdk.vm.ci.code.BytecodePosition;
 import jdk.vm.ci.meta.JavaConstant;
@@ -435,6 +446,760 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
         @Override
         public Collection<MethodFlowsGraph> getCalleesFlows(PointsToAnalysis bb) {
             return new ArrayList<>(calleesFlows.keySet());
+        }
+    }
+
+    @Override
+    public SingleTypeState singleTypeState(PointsToAnalysis bb, boolean canBeNull, int properties, AnalysisType type, AnalysisObject... objects) {
+        return new ContextSensitiveSingleTypeState(bb, canBeNull, properties, type, objects);
+    }
+
+    @Override
+    public MultiTypeState multiTypeState(PointsToAnalysis bb, boolean canBeNull, int properties, BitSet typesBitSet, AnalysisObject... objects) {
+        return new ContextSensitiveMultiTypeState(bb, canBeNull, properties, typesBitSet, objects);
+    }
+
+    @Override
+    public TypeState doUnion(PointsToAnalysis bb, SingleTypeState state1, SingleTypeState state2) {
+        if (state1.equals(state2)) {
+            return state1;
+        }
+
+        ContextSensitiveSingleTypeState s1 = (ContextSensitiveSingleTypeState) state1;
+        ContextSensitiveSingleTypeState s2 = (ContextSensitiveSingleTypeState) state2;
+
+        boolean resultCanBeNull = s1.canBeNull() || s2.canBeNull();
+        if (s1.exactType().equals(s2.exactType())) {
+
+            /* The inputs have the same type, so the result is a SingleTypeState. */
+
+            /* Create the resulting objects array. */
+            AnalysisObject[] resultObjects = TypeStateUtils.union(bb, s1.objects(), s2.objects());
+
+            /* Check if any of the arrays contains the other. */
+            if (resultObjects == s1.objects()) {
+                return s1.forCanBeNull(bb, resultCanBeNull);
+            } else if (resultObjects == s2.objects()) {
+                return s2.forCanBeNull(bb, resultCanBeNull);
+            }
+
+            /* Due to the test above the union set cannot be equal to any of the two arrays. */
+            assert !bb.extendedAsserts() || !Arrays.equals(resultObjects, s1.objects()) && !Arrays.equals(resultObjects, s2.objects());
+
+            /* Create the resulting exact type state. */
+            SingleTypeState result = new ContextSensitiveSingleTypeState(bb, resultCanBeNull, bb.analysisPolicy().makePropertiesForUnion(s1, s2), s1.exactType(), resultObjects);
+            assert !s1.equals(result) && !s2.equals(result);
+            PointsToStats.registerUnionOperation(bb, s1, s2, result);
+            return result;
+        } else {
+            /* The inputs have different types, so the result is a MultiTypeState. */
+            AnalysisObject[] resultObjects;
+            if (s1.exactType().getId() < s2.exactType().getId()) {
+                resultObjects = TypeStateUtils.concat(s1.objects(), s2.objects());
+            } else {
+                resultObjects = TypeStateUtils.concat(s2.objects(), s1.objects());
+            }
+
+            /* We know the types, construct the types bit set without walking the objects. */
+            BitSet typesBitSet = new BitSet();
+            typesBitSet.set(s1.exactType().getId());
+            typesBitSet.set(s2.exactType().getId());
+
+            int properties = bb.analysisPolicy().makePropertiesForUnion(s1, s2);
+
+            TypeState result = new ContextSensitiveMultiTypeState(bb, resultCanBeNull, properties, typesBitSet, resultObjects);
+            PointsToStats.registerUnionOperation(bb, s1, s2, result);
+            return result;
+        }
+    }
+
+    @Override
+    public TypeState doUnion(PointsToAnalysis bb, MultiTypeState state1, SingleTypeState s2) {
+
+        ContextSensitiveMultiTypeState s1 = (ContextSensitiveMultiTypeState) state1;
+
+        boolean resultCanBeNull = s1.canBeNull() || s2.canBeNull();
+
+        AnalysisObject[] so1 = s1.objects();
+        AnalysisObject[] so2 = s2.objects();
+        if (so2.length == 1 && s1.containsObject(so2[0])) {
+            /*
+             * Speculate that s2 has a single object and s1 already contains that object. This
+             * happens often during object scanning where we repeatedly add the scanned constants to
+             * field or array elements flows. The binary search executed by containsObject should be
+             * faster than the linear search below.
+             */
+            return s1.forCanBeNull(bb, resultCanBeNull);
+        }
+
+        if (s1.containsType(s2.exactType())) {
+            /* Objects of the same type as s2 are contained in s1. */
+
+            /* Get the range of objects in s1 corresponding to the type of s2. */
+            ContextSensitiveMultiTypeState.Range typeRange = s1.findTypeRange(s2.exactType());
+            /* Get the slice of objects in s1 corresponding to the type of s2. */
+            AnalysisObject[] s1ObjectsSlice = s1.objectsArray(typeRange);
+
+            /* Create the resulting objects array. */
+            AnalysisObject[] unionObjects = TypeStateUtils.union(bb, s1ObjectsSlice, so2);
+
+            /* Check if s1 contains s2's objects for this type. */
+            if (unionObjects == s1ObjectsSlice) {
+                return s1.forCanBeNull(bb, resultCanBeNull);
+            }
+
+            /*
+             * Due to the test above and to the fact that TypeStateUtils.union checks if one array
+             * contains the other the union set cannot be equal to s1's objects slice.
+             */
+            assert !bb.extendedAsserts() || !Arrays.equals(unionObjects, s1ObjectsSlice);
+
+            /*
+             * Replace the s1 objects slice of the same type as s2 with the union objects and create
+             * a new state.
+             */
+            int resultSize = so1.length + unionObjects.length - s1ObjectsSlice.length;
+            AnalysisObject[] resultObjects = new AnalysisObject[resultSize];
+
+            System.arraycopy(so1, 0, resultObjects, 0, typeRange.left());
+            System.arraycopy(unionObjects, 0, resultObjects, typeRange.left(), unionObjects.length);
+            System.arraycopy(so1, typeRange.right(), resultObjects, typeRange.left() + unionObjects.length, so1.length - typeRange.right());
+
+            /* The types bit set of the result and s1 are the same. */
+
+            int properties = bb.analysisPolicy().makePropertiesForUnion(s1, s2);
+
+            MultiTypeState result = new ContextSensitiveMultiTypeState(bb, resultCanBeNull, properties, s1.typesBitSet(), resultObjects);
+            assert !result.equals(s1);
+            /*
+             * No need to check the result size against the all-instantiated since the type count
+             * didn't change.
+             */
+            PointsToStats.registerUnionOperation(bb, s1, s2, result);
+            return result;
+        } else {
+            AnalysisObject[] resultObjects;
+            if (s2.exactType().getId() < s1.firstType().getId()) {
+                resultObjects = TypeStateUtils.concat(so2, so1);
+            } else if (s2.exactType().getId() > s1.lastType().getId()) {
+                resultObjects = TypeStateUtils.concat(so1, so2);
+            } else {
+
+                /* Find insertion point within the s1.objects. */
+                int idx1 = 0;
+                while (idx1 < so1.length && so1[idx1].getTypeId() < s2.exactType().getId()) {
+                    idx1++;
+                }
+
+                /* Create the resulting objects array and insert the s2 objects. */
+                resultObjects = new AnalysisObject[so1.length + so2.length];
+
+                System.arraycopy(so1, 0, resultObjects, 0, idx1);
+                System.arraycopy(so2, 0, resultObjects, idx1, so2.length);
+                System.arraycopy(so1, idx1, resultObjects, idx1 + so2.length, so1.length - idx1);
+            }
+
+            /* Create the types bit set by adding the s2 type to avoid walking the objects. */
+            BitSet typesBitSet = TypeStateUtils.set(s1.typesBitSet(), s2.exactType().getId());
+            int properties = bb.analysisPolicy().makePropertiesForUnion(s1, s2);
+
+            MultiTypeState result = new ContextSensitiveMultiTypeState(bb, resultCanBeNull, properties, typesBitSet, resultObjects);
+            PointsToStats.registerUnionOperation(bb, s1, s2, result);
+            return result;
+        }
+    }
+
+    @Override
+    public TypeState doUnion(PointsToAnalysis bb, MultiTypeState state1, MultiTypeState state2) {
+        ContextSensitiveMultiTypeState s1 = (ContextSensitiveMultiTypeState) state1;
+        ContextSensitiveMultiTypeState s2 = (ContextSensitiveMultiTypeState) state2;
+
+        assert s1.objectsCount() >= s2.objectsCount() : "Union is commutative, must call it with s1 being the bigger state";
+        boolean resultCanBeNull = s1.canBeNull() || s2.canBeNull();
+
+        /*
+         * No need for a deep equality check (which would need to iterate the arrays), since the
+         * speculation logic below is doing that anyway.
+         */
+        if (s1.objects() == s2.objects()) {
+            return s1.forCanBeNull(bb, resultCanBeNull);
+        }
+
+        return doUnion0(bb, s1, s2, resultCanBeNull);
+    }
+
+    private static TypeState doUnion0(PointsToAnalysis bb, ContextSensitiveMultiTypeState s1, ContextSensitiveMultiTypeState s2, boolean resultCanBeNull) {
+
+        /* Speculate that s1 and s2 are distinct sets. */
+
+        if (s1.lastType().getId() < s2.firstType().getId()) {
+            /* Speculate that objects in s2 follow after objects in s1. */
+
+            /* Concatenate the objects. */
+            AnalysisObject[] resultObjects = TypeStateUtils.concat(s1.objects(), s2.objects());
+
+            /* Logical OR the type bit sets. */
+            BitSet resultTypesBitSet = TypeStateUtils.or(s1.typesBitSet(), s2.typesBitSet());
+            int properties = bb.analysisPolicy().makePropertiesForUnion(s1, s2);
+
+            MultiTypeState result = new ContextSensitiveMultiTypeState(bb, resultCanBeNull, properties, resultTypesBitSet, resultObjects);
+            PointsToStats.registerUnionOperation(bb, s1, s2, result);
+            return result;
+
+        } else if (s2.lastType().getId() < s1.firstType().getId()) {
+            /* Speculate that objects in s1 follow after objects in s2. */
+
+            /* Concatenate the objects. */
+            AnalysisObject[] resultObjects = TypeStateUtils.concat(s2.objects(), s1.objects());
+
+            /* Logical OR the type bit sets. */
+            BitSet resultTypesBitSet = TypeStateUtils.or(s1.typesBitSet(), s2.typesBitSet());
+            int properties = bb.analysisPolicy().makePropertiesForUnion(s1, s2);
+
+            MultiTypeState result = new ContextSensitiveMultiTypeState(bb, resultCanBeNull, properties, resultTypesBitSet, resultObjects);
+            PointsToStats.registerUnionOperation(bb, s1, s2, result);
+            return result;
+        }
+
+        return doUnion1(bb, s1, s2, resultCanBeNull);
+    }
+
+    private static TypeState doUnion1(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2, boolean resultCanBeNull) {
+        if (PointstoOptions.AllocationSiteSensitiveHeap.getValue(bb.getOptions())) {
+            return allocationSensitiveSpeculativeUnion1(bb, s1, s2, resultCanBeNull);
+        } else {
+            return allocationInsensitiveSpeculativeUnion1(bb, s1, s2, resultCanBeNull);
+        }
+    }
+
+    /**
+     * Optimization that gives 1.5-3x in performance for the (typeflow) phase.
+     */
+    private static TypeState allocationInsensitiveSpeculativeUnion1(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2, boolean resultCanBeNull) {
+        if (s1.typesBitSet().length() >= s2.typesBitSet().length()) {
+            long[] bits1 = TypeStateUtils.extractBitSetField(s1.typesBitSet());
+            long[] bits2 = TypeStateUtils.extractBitSetField(s2.typesBitSet());
+            assert s2.typesBitSet().cardinality() == s2.objects().length : "Cardinality and length of objects must match.";
+
+            boolean speculate = true;
+            int numberOfWords = Math.min(bits1.length, bits2.length);
+            for (int i = 0; i < numberOfWords; i++) {
+                /* bits2 is a subset of bits1 */
+                if ((bits1[i] & bits2[i]) != bits2[i]) {
+                    speculate = false;
+                    break;
+                }
+            }
+            if (speculate) {
+                return s1.forCanBeNull(bb, resultCanBeNull);
+            }
+        }
+        return doUnion2(bb, s1, s2, resultCanBeNull, 0, 0);
+    }
+
+    private static TypeState allocationSensitiveSpeculativeUnion1(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2, boolean resultCanBeNull) {
+        int idx1 = 0;
+        int idx2 = 0;
+        AnalysisPolicy analysisPolicy = bb.analysisPolicy();
+        AnalysisObject[] so1 = s1.objects();
+        AnalysisObject[] so2 = s2.objects();
+        while (idx1 < so1.length && idx2 < so2.length) {
+            AnalysisObject o1 = so1[idx1];
+            AnalysisObject o2 = so2[idx2];
+            if (analysisPolicy.isSummaryObject(o1) && o1.getTypeId() == o2.getTypeId()) {
+                idx1++;
+                /* Skip over s2 objects of this type while marking them as merged. */
+                while (idx2 < s2.objectsCount() && so2[idx2].getTypeId() == o1.getTypeId()) {
+                    analysisPolicy.noteMerge(bb, so2[idx2]);
+                    idx2++;
+                }
+            } else if (o1.getId() < o2.getId()) {
+                idx1++;
+            } else if (o1.getId() == o2.getId()) {
+                /* If the objects are equal continue. */
+                idx1++;
+                idx2++;
+            } else {
+                /* Our speculation failed. */
+                break;
+            }
+
+            if (idx2 == so2.length) {
+                return s1.forCanBeNull(bb, resultCanBeNull);
+            }
+        }
+        return doUnion2(bb, s1, s2, resultCanBeNull, idx1, idx2);
+    }
+
+    private static final ThreadLocal<UnsafeArrayListClosable<AnalysisObject>> doUnion2TL = new ThreadLocal<>();
+    private static final ThreadLocal<UnsafeArrayListClosable<AnalysisObject>> doUnion2ObjectsTL = new ThreadLocal<>();
+
+    private static TypeState doUnion2(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2, boolean resultCanBeNull, int startId1, int startId2) {
+        try (UnsafeArrayListClosable<AnalysisObject> resultObjectsClosable = getTLArrayList(doUnion2TL, s1.objects().length + s2.objects().length)) {
+            UnsafeArrayList<AnalysisObject> resultObjects = resultObjectsClosable.list();
+            /* Add the beginning of the s1 list that we already walked above. */
+            AnalysisObject[] objects = s1.objects();
+            resultObjects.addAll(objects, 0, startId1);
+
+            int idx1 = startId1;
+            int idx2 = startId2;
+
+            /* Create the union of the overlapping sections of the s1 and s2. */
+            try (UnsafeArrayListClosable<AnalysisObject> tlUnionObjectsClosable = getTLArrayList(doUnion2ObjectsTL, s1.objects().length + s2.objects().length)) {
+                UnsafeArrayList<AnalysisObject> unionObjects = tlUnionObjectsClosable.list();
+
+                AnalysisObject[] so1 = s1.objects();
+                AnalysisObject[] so2 = s2.objects();
+                AnalysisPolicy analysisPolicy = bb.analysisPolicy();
+                while (idx1 < so1.length && idx2 < so2.length) {
+                    AnalysisObject o1 = so1[idx1];
+                    AnalysisObject o2 = so2[idx2];
+                    int t1 = o1.getTypeId();
+                    int t2 = o2.getTypeId();
+                    if (analysisPolicy.isSummaryObject(o1) && t1 == t2) {
+                        unionObjects.add(o1);
+                        /* Skip over s2 objects of this type while marking them as merged. */
+                        while (idx2 < so2.length && t1 == so2[idx2].getTypeId()) {
+                            analysisPolicy.noteMerge(bb, so2[idx2]);
+                            idx2++;
+                        }
+                        idx1++;
+                    } else if (analysisPolicy.isSummaryObject(o2) && t1 == t2) {
+                        unionObjects.add(o2);
+                        /* Skip over s1 objects of this type while marking them as merged. */
+                        while (idx1 < so1.length && so1[idx1].getTypeId() == t2) {
+                            analysisPolicy.noteMerge(bb, so1[idx1]);
+                            idx1++;
+                        }
+                        idx2++;
+                    } else if (o1.getId() < o2.getId()) {
+                        unionObjects.add(o1);
+                        idx1++;
+                    } else if (o1.getId() > o2.getId()) {
+                        unionObjects.add(o2);
+                        idx2++;
+                    } else {
+                        assert o1.equals(o2);
+                        unionObjects.add(o1);
+                        idx1++;
+                        idx2++;
+                    }
+                }
+
+                /*
+                 * Check if the union of objects of a type in the overlapping section reached the
+                 * limit. The limit, bb.options().maxObjectSetSize(), has a minimum value of 1.
+                 */
+                if (PointstoOptions.LimitObjectArrayLength.getValue(bb.getOptions()) && unionObjects.size() > PointstoOptions.MaxObjectSetSize.getValue(bb.getOptions())) {
+                    int idxStart = 0;
+                    int idxEnd = 0;
+                    while (idxEnd < unionObjects.size()) {
+                        AnalysisObject oStart = unionObjects.get(idxStart);
+
+                        /* While types are equal and the end is not reached, advance idxEnd. */
+                        while (idxEnd < unionObjects.size() && oStart.equals(unionObjects.get(idxEnd))) {
+                            idxEnd = idxEnd + 1;
+                        }
+                        /*
+                         * Process the type change or, if idxEnd reached the end, process the last
+                         * stride
+                         */
+                        int size = idxEnd - idxStart;
+                        if (size > PointstoOptions.MaxObjectSetSize.getValue(bb.getOptions())) {
+                            /*
+                             * Object count exceeds the limit. Mark the objects in the stride as
+                             * merged.
+                             */
+                            for (int i = idxStart; i < idxEnd; i += 1) {
+                                bb.analysisPolicy().noteMerge(bb, unionObjects.get(i));
+                            }
+                            /* Add the context insensitive object in the result list. */
+                            resultObjects.add(oStart.type().getContextInsensitiveAnalysisObject());
+                        } else {
+                            /* Object count is within the limit, add them to the result. */
+                            resultObjects.addAll(unionObjects.elementData(), idxStart, idxEnd);
+                        }
+                        idxStart = idxEnd;
+                    }
+
+                } else {
+                    resultObjects.addAll(unionObjects.elementData(), 0, unionObjects.size());
+                }
+            }
+
+            /*
+             * Add the leftover objects in the result list.
+             *
+             * Arrays.asList(a).subList(from, to) first creates a list wrapper over the array then
+             * it creates a view of a portion of the list, thus it only allocates the list and
+             * sub-list wrappers. Then ArrayList.addAll() calls System.arraycopy() which should be
+             * more efficient than copying one element at a time.
+             */
+            if (idx1 < s1.objects().length) {
+                resultObjects.addAll(s1.objects(), idx1, s1.objects().length);
+            } else if (idx2 < s2.objects().length) {
+                resultObjects.addAll(s2.objects(), idx2, s2.objects().length);
+            }
+
+            assert resultObjects.size() > 1 : "The result state of a (Multi U Multi) operation must have at least 2 objects";
+
+            /* Logical OR the type bit sets. */
+            BitSet resultTypesBitSet = TypeStateUtils.or(s1.typesBitSet(), s2.typesBitSet());
+            int properties = bb.analysisPolicy().makePropertiesForUnion(s1, s2);
+
+            MultiTypeState result = new ContextSensitiveMultiTypeState(bb, resultCanBeNull, properties, resultTypesBitSet, resultObjects.copyToArray(new AnalysisObject[resultObjects.size()]));
+            assert !result.equals(s1) : "speculation code should prevent this case";
+
+            /* The result can be equal to s2 only if s1 and s2 have the same number of types. */
+            if (s1.typesCount() == s2.typesCount() && result.equals(s2)) {
+                return s2.forCanBeNull(bb, resultCanBeNull);
+            }
+
+            PointsToStats.registerUnionOperation(bb, s1, s2, result);
+
+            return result;
+        }
+    }
+
+    /*
+     * Implementation of intersection.
+     *
+     * The implementation of intersection is specific to our current use case, i.e., it is not a
+     * general set intersection implementation. The limitation, checked by the assertions below,
+     * refers to the fact that when we use intersection we only care about selecting all the objects
+     * of a certain type or types, e.g., for filtering. We don't currently have a situation where we
+     * only want to select a subset of objects of a type. In our use the types whose objects need to
+     * be selected are always specified in s2 through their context insensitive objects, thus s2
+     * must only contain context insensitive objects.
+     */
+
+    @Override
+    public TypeState doIntersection(PointsToAnalysis bb, MultiTypeState s1, SingleTypeState s2) {
+        /* See comment above for the limitation explanation. */
+        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(s2) : "Current implementation limitation.";
+
+        boolean resultCanBeNull = s1.canBeNull() && s2.canBeNull();
+        if (s1.containsType(s2.exactType())) {
+            /* The s2's type is contained in s1, so pick all objects of the same type from s1. */
+            AnalysisObject[] resultObjects = s1.objectsArray(s2.exactType());
+            /* All objects must have the same type. */
+            assert TypeStateUtils.holdsSingleTypeState(resultObjects);
+            return new ContextSensitiveSingleTypeState(bb, resultCanBeNull, bb.analysisPolicy().makeProperties(bb, resultObjects), s2.exactType(), resultObjects);
+        } else {
+            return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);
+        }
+    }
+
+    @Override
+    public TypeState doIntersection(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2) {
+        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(s2) : "Current implementation limitation.";
+
+        boolean resultCanBeNull = s1.canBeNull() && s2.canBeNull();
+
+        /*
+         * No need for a deep equality check (which would need to iterate the arrays), since the
+         * speculation logic below is doing that anyway.
+         */
+        if (s1.objects() == s2.objects()) {
+            return s1.forCanBeNull(bb, resultCanBeNull);
+        }
+
+        return doIntersection0(bb, s1, s2, resultCanBeNull);
+    }
+
+    private static TypeState doIntersection0(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2, boolean resultCanBeNull) {
+        /* Speculate that s1 and s2 have either the same types, or no types in common. */
+
+        if (s1.typesBitSet().equals(s2.typesBitSet())) {
+            /* Speculate that s1 and s2 have the same types, i.e., the result is s1. */
+            return s1.forCanBeNull(bb, resultCanBeNull);
+        }
+
+        if (!s1.typesBitSet().intersects(s2.typesBitSet())) {
+            /* Speculate that s1 and s2 have no types in common, i.e., the result is empty. */
+            return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);
+        }
+
+        return doIntersection1(bb, s1, s2, resultCanBeNull);
+    }
+
+    private static TypeState doIntersection1(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2, boolean resultCanBeNull) {
+        /*
+         * Speculate that s2 contains all types of s1, i.e., the filter is broader than s1, thus the
+         * result is s1.
+         */
+
+        int idx1 = 0;
+        int idx2 = 0;
+        AnalysisObject[] so1 = s1.objects();
+        AnalysisObject[] so2 = s2.objects();
+        while (idx2 < so2.length) {
+            AnalysisObject o1 = so1[idx1];
+            AnalysisObject o2 = so2[idx2];
+
+            /* See comment above for the limitation explanation. */
+            assert o2.isContextInsensitiveObject() : "Current implementation limitation.";
+
+            if (o1.getTypeId() > o2.getTypeId()) {
+                /* s2 is behind, advance s2. */
+                idx2++;
+            } else if (o1.getTypeId() == o2.getTypeId()) {
+                /* If the types are equal continue with speculation. */
+                while (idx1 < so1.length && so1[idx1].getTypeId() == o2.getTypeId()) {
+                    /* Walk over the s1 objects of the same type as o2. */
+                    idx1++;
+                }
+                idx2++;
+            } else {
+                /* Our speculation failed. */
+                break;
+            }
+
+            if (idx1 == so1.length) {
+                /*
+                 * Our speculation succeeded: we walked down the whole s1 list, and all of its types
+                 * are included in s2.
+                 */
+
+                return s1.forCanBeNull(bb, resultCanBeNull);
+            }
+
+        }
+
+        return doIntersection2(bb, s1, s2, resultCanBeNull, idx1, idx2);
+    }
+
+    private static ThreadLocal<ListUtils.UnsafeArrayListClosable<AnalysisObject>> intersectionArrayListTL = new ThreadLocal<>();
+
+    private static TypeState doIntersection2(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2, boolean resultCanBeNull, int idx1Param, int idx2Param) {
+
+        try (ListUtils.UnsafeArrayListClosable<AnalysisObject> tlArrayClosable = ListUtils.getTLArrayList(intersectionArrayListTL, 256)) {
+            ListUtils.UnsafeArrayList<AnalysisObject> resultObjects = tlArrayClosable.list();
+
+            AnalysisObject[] so1 = s1.objects();
+            AnalysisObject[] so2 = s2.objects();
+            int[] types1 = ((ContextSensitiveMultiTypeState) s1).getObjectTypeIds();
+            int[] types2 = ((ContextSensitiveMultiTypeState) s2).getObjectTypeIds();
+            int idx1 = idx1Param;
+            int idx2 = idx2Param;
+            int l1 = so1.length;
+            int l2 = so2.length;
+            int t1 = types1[idx1];
+            int t2 = types2[idx2];
+            while (idx1 < l1 && idx2 < l2) {
+                assert so2[idx2].isContextInsensitiveObject() : "Current implementation limitation.";
+                if (t1 == t2) {
+                    assert so1[idx1].type().equals(so2[idx2].type());
+                    resultObjects.add(so1[idx1]);
+                    t1 = types1[++idx1];
+                } else if (t1 < t2) {
+                    t1 = types1[++idx1];
+                } else if (t1 > t2) {
+                    t2 = types2[++idx2];
+                }
+            }
+
+            int totalLength = idx1Param + resultObjects.size();
+
+            if (totalLength == 0) {
+                return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);
+            } else {
+                AnalysisObject[] objects = new AnalysisObject[totalLength];
+                /* Copy the recently touched first */
+                resultObjects.copyToArray(objects, idx1Param);
+                /* Add the beginning of the s1 list that we already walked above. */
+                System.arraycopy(s1.objects(), 0, objects, 0, idx1Param);
+
+                if (TypeStateUtils.holdsSingleTypeState(objects, objects.length)) {
+                    /* Multiple objects of the same type. */
+                    return new ContextSensitiveSingleTypeState(bb, resultCanBeNull, bb.analysisPolicy().makeProperties(bb, objects), objects[0].type(), objects);
+                } else {
+                    /* Logical AND the type bit sets. */
+                    BitSet resultTypesBitSet = TypeStateUtils.and(s1.typesBitSet(), s2.typesBitSet());
+                    MultiTypeState result = new ContextSensitiveMultiTypeState(bb, resultCanBeNull, bb.analysisPolicy().makeProperties(bb, objects), resultTypesBitSet, objects);
+
+                    /*
+                     * The result can be equal to s1 if and only if s1 and s2 have the same type
+                     * count.
+                     */
+                    if (s1.typesCount() == s2.typesCount() && result.equals(s1)) {
+                        return s1.forCanBeNull(bb, resultCanBeNull);
+                    }
+
+                    /*
+                     * Don't need to check if the result is close-to-all-instantiated since result
+                     * <= s1.
+                     */
+                    return result;
+                }
+            }
+        }
+    }
+
+    /*
+     * Implementation of subtraction.
+     *
+     * The implementation of subtraction is specific to our current use case, i.e., it is not a
+     * general set subtraction implementation. The limitation, checked by the assertions below,
+     * refers to the fact that when we use subtraction we only care about eliminating all the
+     * objects of a certain type or types, e.g., for filtering. We don't currently have a situation
+     * where we only want to remove a subset of objects of a type. In our use the types whose
+     * objects need to be eliminated are always specified in s2 through their context insensitive
+     * objects, thus s2 must only contain context insensitive objects.
+     */
+
+    @Override
+    public TypeState doSubtraction(PointsToAnalysis bb, MultiTypeState s1, SingleTypeState s2) {
+        boolean resultCanBeNull = s1.canBeNull() && !s2.canBeNull();
+        if (s1.containsType(s2.exactType())) {
+            /* s2 is contained in s1, so remove all objects of the same type from s1. */
+
+            /* See comment above for the limitation explanation. */
+            assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(s2) : "Current implementation limitation.";
+
+            /* Find the range of objects of s2.exactType() in s1. */
+            ContextSensitiveMultiTypeState.Range typeRange = ((ContextSensitiveMultiTypeState) s1).findTypeRange(s2.exactType());
+            int newLength = s1.objects().length - (typeRange.right() - typeRange.left());
+            AnalysisObject[] resultObjects = new AnalysisObject[newLength];
+
+            /* Copy all the objects in s1 but the ones inside the range to the result list. */
+            System.arraycopy(s1.objects(), 0, resultObjects, 0, typeRange.left());
+            System.arraycopy(s1.objects(), typeRange.right(), resultObjects, typeRange.left(), s1.objects().length - typeRange.right());
+
+            if (resultObjects.length == 1) {
+                return new ContextSensitiveSingleTypeState(bb, resultCanBeNull, bb.analysisPolicy().makeProperties(bb, resultObjects[0]), resultObjects[0].type(), resultObjects[0]);
+            } else if (TypeStateUtils.holdsSingleTypeState(resultObjects)) {
+                /* Multiple objects of the same type. */
+                return new ContextSensitiveSingleTypeState(bb, resultCanBeNull, bb.analysisPolicy().makeProperties(bb, resultObjects), resultObjects[0].type(), resultObjects);
+            } else {
+                BitSet resultTypesBitSet = TypeStateUtils.clear(s1.typesBitSet(), s2.exactType().getId());
+                return new ContextSensitiveMultiTypeState(bb, resultCanBeNull, bb.analysisPolicy().makeProperties(bb, resultObjects), resultTypesBitSet, resultObjects);
+            }
+
+        } else {
+            return s1.forCanBeNull(bb, resultCanBeNull);
+        }
+    }
+
+    @Override
+    public TypeState doSubtraction(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2) {
+        boolean resultCanBeNull = s1.canBeNull() && !s2.canBeNull();
+        /*
+         * No need for a deep equality check (which would need to iterate the arrays), since the
+         * speculation logic below is doing that anyway.
+         */
+        if (s1.objects() == s2.objects()) {
+            return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);
+        }
+
+        return doSubtraction0(bb, s1, s2, resultCanBeNull);
+    }
+
+    private static TypeState doSubtraction0(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2, boolean resultCanBeNull) {
+        /* Speculate that s1 and s2 have either the same types, or no types in common. */
+
+        if (s1.typesBitSet().equals(s2.typesBitSet())) {
+            /* Speculate that s1 and s2 have the same types, i.e., the result is empty set. */
+            return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);
+        }
+
+        if (!s1.typesBitSet().intersects(s2.typesBitSet())) {
+            /* Speculate that s1 and s2 have no types in common, i.e., the result is s1. */
+            return s1.forCanBeNull(bb, resultCanBeNull);
+        }
+
+        return doSubtraction1(bb, s1, s2, resultCanBeNull);
+    }
+
+    private static TypeState doSubtraction1(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2, boolean resultCanBeNull) {
+        /*
+         * Speculate that s1 and s2 have no overlap, i.e., they don't have any objects in common. In
+         * that case, the result is just s1.
+         */
+        int idx1 = 0;
+        int idx2 = 0;
+
+        AnalysisObject[] so1 = s1.objects();
+        AnalysisObject[] so2 = s2.objects();
+        while (true) {
+            AnalysisObject o1 = so1[idx1];
+            AnalysisObject o2 = so2[idx2];
+
+            /* See comment above for the limitation explanation. */
+            assert o2.isContextInsensitiveObject() : "Current implementation limitation.";
+
+            if (o1.getTypeId() < o2.getTypeId()) {
+                idx1++;
+                if (idx1 == so1.length) {
+                    return s1.forCanBeNull(bb, resultCanBeNull);
+                }
+            } else if (o1.getTypeId() > o2.getTypeId()) {
+                idx2++;
+                if (idx2 == so2.length) {
+                    return s1.forCanBeNull(bb, resultCanBeNull);
+                }
+            } else {
+                /* Our speculation failed. */
+                break;
+            }
+        }
+
+        return doSubtraction2(bb, s1, s2, resultCanBeNull, idx1, idx2);
+    }
+
+    private static TypeState doSubtraction2(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2, boolean resultCanBeNull, int idx1Param, int idx2Param) {
+        try (ListUtils.UnsafeArrayListClosable<AnalysisObject> tlArrayClosable = ListUtils.getTLArrayList(intersectionArrayListTL, 256)) {
+            ListUtils.UnsafeArrayList<AnalysisObject> resultObjects = tlArrayClosable.list();
+
+            AnalysisObject[] so1 = s1.objects();
+            AnalysisObject[] so2 = s2.objects();
+            int[] types1 = ((ContextSensitiveMultiTypeState) s1).getObjectTypeIds();
+            int[] types2 = ((ContextSensitiveMultiTypeState) s2).getObjectTypeIds();
+            int idx1 = idx1Param;
+            int idx2 = idx2Param;
+            int l1 = so1.length;
+            int l2 = so2.length;
+            int t1 = types1[idx1];
+            int t2 = types2[idx2];
+            while (idx1 < l1 && idx2 < l2) {
+                assert so2[idx2].isContextInsensitiveObject() : "Current implementation limitation.";
+                if (t1 < t2) {
+                    resultObjects.add(so1[idx1]);
+                    t1 = types1[++idx1];
+                } else if (t1 > t2) {
+                    t2 = types2[++idx2];
+                } else if (t1 == t2) {
+                    assert so1[idx1].type().equals(so2[idx2].type());
+                    t1 = types1[++idx1];
+                }
+            }
+
+            int remainder = s1.objects().length - idx1;
+            int totalLength = idx1Param + resultObjects.size() + remainder;
+
+            if (totalLength == 0) {
+                return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);
+            } else {
+                AnalysisObject[] objects = new AnalysisObject[totalLength];
+                /* Copy recently touched first */
+                resultObjects.copyToArray(objects, idx1Param);
+                /* leading elements */
+                System.arraycopy(s1.objects(), 0, objects, 0, idx1Param);
+                /* trailing elements (remainder) */
+                System.arraycopy(s1.objects(), idx1, objects, totalLength - remainder, remainder);
+
+                if (TypeStateUtils.holdsSingleTypeState(objects, totalLength)) {
+                    /* Multiple objects of the same type. */
+                    return new ContextSensitiveSingleTypeState(bb, resultCanBeNull, bb.analysisPolicy().makeProperties(bb, objects), objects[0].type(), objects);
+                } else {
+                    BitSet resultTypesBitSet = TypeStateUtils.andNot(s1.typesBitSet(), s2.typesBitSet());
+                    /*
+                     * Don't need to check if the result is close-to-all-instantiated since result
+                     * <= s1.
+                     */
+                    return new ContextSensitiveMultiTypeState(bb, resultCanBeNull, bb.analysisPolicy().makeProperties(bb, objects), resultTypesBitSet, objects);
+                }
+            }
         }
     }
 

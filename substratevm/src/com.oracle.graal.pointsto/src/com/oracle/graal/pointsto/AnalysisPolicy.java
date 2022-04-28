@@ -24,6 +24,12 @@
  */
 package com.oracle.graal.pointsto;
 
+import com.oracle.graal.pointsto.flow.InvokeTypeFlow;
+import com.oracle.graal.pointsto.meta.InvokeInfo;
+import com.oracle.graal.pointsto.typestate.MultiTypeState;
+import com.oracle.graal.pointsto.typestate.SingleTypeState;
+import com.oracle.graal.pointsto.typestate.TypeStateUtils;
+import org.graalvm.collections.EconomicMap;
 import org.graalvm.compiler.options.OptionValues;
 
 import com.oracle.graal.pointsto.api.PointstoOptions;
@@ -47,6 +53,9 @@ import com.oracle.graal.pointsto.typestore.FieldTypeStore;
 
 import jdk.vm.ci.code.BytecodePosition;
 import jdk.vm.ci.meta.JavaConstant;
+
+import java.util.BitSet;
+import java.util.stream.StreamSupport;
 
 public abstract class AnalysisPolicy {
 
@@ -167,4 +176,73 @@ public abstract class AnalysisPolicy {
         /* The default analysis policy doesn't use properties. */
         return 0;
     }
+
+    public abstract SingleTypeState singleTypeState(PointsToAnalysis bb, boolean canBeNull, int properties, AnalysisType type, AnalysisObject... objects);
+
+    public abstract MultiTypeState multiTypeState(PointsToAnalysis bb, boolean canBeNull, int properties, BitSet typesBitSet, AnalysisObject... objects);
+
+    public abstract TypeState doUnion(PointsToAnalysis bb, SingleTypeState s1, SingleTypeState s2);
+
+    public abstract TypeState doUnion(PointsToAnalysis bb, MultiTypeState s1, SingleTypeState s2);
+
+    public abstract TypeState doUnion(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2);
+
+    public abstract Iterable<? extends InvokeInfo> getInvokes();
+
+    void foo() {
+        StreamSupport.stream(getInvokes().spliterator(), false)
+                        .sorted(invokeInfoComparator)
+                        .forEach(invokeInfo -> processInvoke(invokeInfo, node, workList));
+    }
+
+    public final TypeState doIntersection(PointsToAnalysis bb, SingleTypeState s1, SingleTypeState s2) {
+        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(s2) : "Current implementation limitation.";
+        boolean resultCanBeNull = s1.canBeNull() && s2.canBeNull();
+        if (s1.exactType().equals(s2.exactType())) {
+            /* The inputs have the same type, the result will be s1. */
+            return s1.forCanBeNull(bb, resultCanBeNull);
+        } else {
+            /* The inputs have different types then the result is empty or null. */
+            return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);
+        }
+    }
+
+    public final TypeState doIntersection(PointsToAnalysis bb, SingleTypeState s1, MultiTypeState s2) {
+        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(s2) : "Current implementation limitation.";
+        boolean resultCanBeNull = s1.canBeNull() && s2.canBeNull();
+        if (s2.containsType(s1.exactType())) {
+            return s1.forCanBeNull(bb, resultCanBeNull);
+        } else {
+            return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);
+        }
+    }
+
+    public abstract TypeState doIntersection(PointsToAnalysis bb, MultiTypeState s1, SingleTypeState s2);
+
+    public abstract TypeState doIntersection(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2);
+
+    public final TypeState doSubtraction(PointsToAnalysis bb, SingleTypeState s1, SingleTypeState s2) {
+        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(s2) : "Current implementation limitation.";
+        boolean resultCanBeNull = s1.canBeNull() && !s2.canBeNull();
+        if (s1.exactType().equals(s2.exactType())) {
+            return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);
+        } else {
+            return s1.forCanBeNull(bb, resultCanBeNull);
+        }
+    }
+
+    public final TypeState doSubtraction(PointsToAnalysis bb, SingleTypeState s1, MultiTypeState s2) {
+        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(s2) : "Current implementation limitation.";
+        boolean resultCanBeNull = s1.canBeNull() && !s2.canBeNull();
+        if (s2.containsType(s1.exactType())) {
+            return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);
+        } else {
+            return s1.forCanBeNull(bb, resultCanBeNull);
+        }
+    }
+
+    public abstract TypeState doSubtraction(PointsToAnalysis bb, MultiTypeState s1, SingleTypeState s2);
+
+    public abstract TypeState doSubtraction(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2);
+
 }

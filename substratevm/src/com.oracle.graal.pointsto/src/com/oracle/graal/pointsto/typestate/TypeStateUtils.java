@@ -61,12 +61,32 @@ public class TypeStateUtils {
      * @return the array belonging to the bitSet. Please use this value responsibly: not modify or
      *         loose track of this value.
      */
-    static long[] extractBitSetField(BitSet bitSet) {
+    public static long[] extractBitSetField(BitSet bitSet) {
         try {
             return (long[]) bitSetArrayAccess.invokeExact(bitSet);
         } catch (Throwable t) {
             throw JVMCIError.shouldNotReachHere(t);
         }
+    }
+
+    /** Return true if first is a superset of second. */
+    public static boolean isSuperset(BitSet first, BitSet second) {
+        if (first.length() >= second.length()) {
+            long[] bits1 = TypeStateUtils.extractBitSetField(first);
+            long[] bits2 = TypeStateUtils.extractBitSetField(second);
+
+            boolean isSuperset = true;
+            int numberOfWords = Math.min(bits1.length, bits2.length);
+            for (int i = 0; i < numberOfWords; i++) {
+                /* bits2 is a subset of bits1 */
+                if ((bits1[i] & bits2[i]) != bits2[i]) {
+                    isSuperset = false;
+                    break;
+                }
+            }
+            return isSuperset;
+        }
+        return false;
     }
 
     static void trimBitSetToSize(BitSet bs) {
@@ -317,8 +337,8 @@ public class TypeStateUtils {
      * Check if a type state contains only context insensitive objects, i.e., the only information
      * it stores is the set of types.
      */
-    static boolean isContextInsensitiveTypeState(TypeState state) {
-        for (AnalysisObject object : state.objects()) {
+    public static boolean isContextInsensitiveTypeState(TypeState state) {
+        for (AnalysisObject object : state.objectsIterable()) {
             if (!object.isContextInsensitiveObject()) {
                 return false;
             }
@@ -326,12 +346,12 @@ public class TypeStateUtils {
         return true;
     }
 
-    static boolean holdsSingleTypeState(AnalysisObject[] objects) {
+    public static boolean holdsSingleTypeState(AnalysisObject[] objects) {
         return holdsSingleTypeState(objects, objects.length);
     }
 
     @SuppressWarnings("RedundantIfStatement")
-    static boolean holdsSingleTypeState(AnalysisObject[] objects, int size) {
+    public static boolean holdsSingleTypeState(AnalysisObject[] objects, int size) {
         assert size > 0;
         int firstType = objects[0].getTypeId();
         int lastType = objects[size - 1].getTypeId();
@@ -343,14 +363,14 @@ public class TypeStateUtils {
     }
 
     /** Logical OR two bit sets without modifying the source. */
-    protected static BitSet or(BitSet bs1, BitSet bs2) {
+    public static BitSet or(BitSet bs1, BitSet bs2) {
         BitSet bsr = (BitSet) bs1.clone();
         bsr.or(bs2);
         return bsr;
     }
 
     /** Logical AND two bit sets without modifying the source. */
-    protected static BitSet and(BitSet bs1, BitSet bs2) {
+    public static BitSet and(BitSet bs1, BitSet bs2) {
         BitSet bsr = (BitSet) bs1.clone();
         bsr.and(bs2);
         return bsr;
@@ -360,7 +380,7 @@ public class TypeStateUtils {
      * Logical AND-NOT of the two bit sets, i.e., clearing all bits in first operand whose
      * corresponding bits are set in the second one, without modifying the source.
      */
-    static BitSet andNot(BitSet bs1, BitSet bs2) {
+    public static BitSet andNot(BitSet bs1, BitSet bs2) {
         BitSet bsr = (BitSet) bs1.clone();
         bsr.andNot(bs2);
         return bsr;
@@ -369,7 +389,7 @@ public class TypeStateUtils {
     /**
      * Sets the bit specified by the index to {@code false} without modifying the source.
      */
-    protected static BitSet clear(BitSet bs1, int bitIndex) {
+    public static BitSet clear(BitSet bs1, int bitIndex) {
         BitSet bsr = (BitSet) bs1.clone();
         bsr.clear(bitIndex);
         return bsr;
@@ -378,7 +398,7 @@ public class TypeStateUtils {
     /**
      * Sets the bit specified by the index to {@code true} without modifying the source.
      */
-    protected static BitSet set(BitSet bs1, int bitIndex) {
+    public static BitSet set(BitSet bs1, int bitIndex) {
         BitSet bsr = (BitSet) bs1.clone();
         bsr.set(bitIndex);
         return bsr;
