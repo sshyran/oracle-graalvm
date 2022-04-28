@@ -160,7 +160,7 @@ public class MultiTypeState extends TypeState {
     public TypeState exactTypeState(PointsToAnalysis bb, AnalysisType exactType) {
         if (containsType(exactType)) {
             AnalysisObject[] resultObjects = objectsArray(exactType);
-            return new SingleTypeState(bb, canBeNull, bb.analysisPolicy().makeProperties(bb, resultObjects), resultObjects);
+            return bb.analysisPolicy().singleTypeState(bb, canBeNull, bb.analysisPolicy().makeProperties(bb, resultObjects), exactType, resultObjects);
         } else {
             return EmptyTypeState.SINGLETON;
         }

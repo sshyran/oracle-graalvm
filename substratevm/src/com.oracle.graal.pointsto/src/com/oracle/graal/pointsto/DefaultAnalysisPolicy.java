@@ -40,7 +40,6 @@ import com.oracle.graal.pointsto.flow.ActualReturnTypeFlow;
 import com.oracle.graal.pointsto.flow.CloneTypeFlow;
 import com.oracle.graal.pointsto.flow.ContextInsensitiveFieldTypeFlow;
 import com.oracle.graal.pointsto.flow.MethodFlowsGraph;
-import com.oracle.graal.pointsto.flow.MethodTypeFlow;
 import com.oracle.graal.pointsto.flow.TypeFlow;
 import com.oracle.graal.pointsto.flow.context.AnalysisContext;
 import com.oracle.graal.pointsto.flow.context.BytecodeLocation;
@@ -423,7 +422,7 @@ public class DefaultAnalysisPolicy extends AnalysisPolicy {
 
     @Override
     public SingleTypeState singleTypeState(PointsToAnalysis bb, boolean canBeNull, int properties, AnalysisType type, AnalysisObject... objects) {
-        return new SingleTypeState(bb, canBeNull, properties, type, objects);
+        return new SingleTypeState(bb, canBeNull, properties, type);
     }
 
     @Override

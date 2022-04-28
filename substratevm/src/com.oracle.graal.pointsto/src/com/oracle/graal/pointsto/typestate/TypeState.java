@@ -287,7 +287,7 @@ public abstract class TypeState {
 
     /** Wraps an analysis object into a non-null type state. */
     public static TypeState forNonNullObject(PointsToAnalysis bb, AnalysisObject object) {
-        return new SingleTypeState(bb, false, bb.analysisPolicy().makeProperties(bb, object), object);
+        return bb.analysisPolicy().singleTypeState(bb, false, bb.analysisPolicy().makeProperties(bb, object), object.type(), object);
     }
 
     /** Wraps the analysis object corresponding to a JavaConstant into a non-null type state. */
@@ -329,7 +329,7 @@ public abstract class TypeState {
 
     public static TypeState forExactType(PointsToAnalysis bb, AnalysisObject object, boolean canBeNull) {
         assert object.type().isArray() || (object.type().isInstanceClass() && !Modifier.isAbstract(object.type().getModifiers())) : object.type();
-        return new SingleTypeState(bb, canBeNull, bb.analysisPolicy().makeProperties(bb, object), object);
+        return bb.analysisPolicy().singleTypeState(bb, canBeNull, bb.analysisPolicy().makeProperties(bb, object), object.type(), object);
     }
 
     public static TypeState forType(PointsToAnalysis bb, AnalysisType type, boolean canBeNull) {
@@ -337,7 +337,7 @@ public abstract class TypeState {
     }
 
     public static TypeState forType(PointsToAnalysis bb, AnalysisObject object, boolean canBeNull) {
-        return new SingleTypeState(bb, canBeNull, bb.analysisPolicy().makeProperties(bb, object), object);
+        return bb.analysisPolicy().singleTypeState(bb, canBeNull, bb.analysisPolicy().makeProperties(bb, object), object.type(), object);
     }
 
     /**
@@ -353,7 +353,7 @@ public abstract class TypeState {
             if (state.isSingleTypeState()) {
                 AnalysisType type = state.exactType();
                 AnalysisObject analysisObject = type.getContextInsensitiveAnalysisObject();
-                return new SingleTypeState(bb, state.canBeNull(), bb.analysisPolicy().makeProperties(bb, analysisObject), analysisObject);
+                return new SingleTypeState(bb, state.canBeNull(), bb.analysisPolicy().makeProperties(bb, analysisObject), analysisObject.type());
             } else {
                 MultiTypeState multiState = (MultiTypeState) state;
                 AnalysisObject[] objectsArray = new AnalysisObject[multiState.typesCount()];
@@ -390,7 +390,7 @@ public abstract class TypeState {
         } else if (s2.isNull()) {
             return s1.forCanBeNull(bb, true);
         } else if (s1 instanceof SingleTypeState && s2 instanceof SingleTypeState) {
-            return doUnion(bb, (SingleTypeState) s1, (SingleTypeState) s2);
+            return bb.analysisPolicy().doUnion(bb, (SingleTypeState) s1, (SingleTypeState) s2);
         } else if (s1 instanceof SingleTypeState && s2 instanceof MultiTypeState) {
             return bb.analysisPolicy().doUnion(bb, (MultiTypeState) s2, (SingleTypeState) s1);
         } else if (s1 instanceof MultiTypeState && s2 instanceof SingleTypeState) {

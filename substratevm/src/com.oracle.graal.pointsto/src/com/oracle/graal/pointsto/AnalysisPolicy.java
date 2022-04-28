@@ -187,14 +187,6 @@ public abstract class AnalysisPolicy {
 
     public abstract TypeState doUnion(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2);
 
-    public abstract Iterable<? extends InvokeInfo> getInvokes();
-
-    void foo() {
-        StreamSupport.stream(getInvokes().spliterator(), false)
-                        .sorted(invokeInfoComparator)
-                        .forEach(invokeInfo -> processInvoke(invokeInfo, node, workList));
-    }
-
     public final TypeState doIntersection(PointsToAnalysis bb, SingleTypeState s1, SingleTypeState s2) {
         assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(s2) : "Current implementation limitation.";
         boolean resultCanBeNull = s1.canBeNull() && s2.canBeNull();
