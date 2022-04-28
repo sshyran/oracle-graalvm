@@ -106,7 +106,7 @@ public class SingleTypeState extends TypeState {
     }
 
     @Override
-    public Iterable<AnalysisObject> objects() {
+    public Iterable<AnalysisObject> objects(BigBang bb) {
         return List.of(type.getContextInsensitiveAnalysisObject());
     }
 

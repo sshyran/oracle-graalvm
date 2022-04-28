@@ -497,7 +497,7 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
             initCallee();
 
             TypeState invokeState = filterReceiverState(bb, getReceiver().getState());
-            for (AnalysisObject receiverObject : invokeState.objects()) {
+            for (AnalysisObject receiverObject : invokeState.objects(bb)) {
                 AnalysisContext calleeContext = bb.contextPolicy().calleeContext(bb, receiverObject, callerContext, callee);
                 MethodFlowsGraph calleeFlows = callee.addContext(bb, calleeContext, this);
 
@@ -949,7 +949,7 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
     @Override
     public TypeState doIntersection(PointsToAnalysis bb, MultiTypeState s1, SingleTypeState s2) {
         /* See comment above for the limitation explanation. */
-        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(s2) : "Current implementation limitation.";
+        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(bb, s2) : "Current implementation limitation.";
 
         boolean resultCanBeNull = s1.canBeNull() && s2.canBeNull();
         if (s1.containsType(s2.exactType())) {
@@ -968,7 +968,7 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
         ContextSensitiveMultiTypeState s1 = (ContextSensitiveMultiTypeState) state1;
         ContextSensitiveMultiTypeState s2 = (ContextSensitiveMultiTypeState) state2;
 
-        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(s2) : "Current implementation limitation.";
+        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(bb, s2) : "Current implementation limitation.";
 
         boolean resultCanBeNull = s1.canBeNull() && s2.canBeNull();
 
@@ -1135,7 +1135,7 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
             /* s2 is contained in s1, so remove all objects of the same type from s1. */
 
             /* See comment above for the limitation explanation. */
-            assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(s2) : "Current implementation limitation.";
+            assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(bb, s2) : "Current implementation limitation.";
 
             /* Find the range of objects of s2.exactType() in s1. */
             ContextSensitiveMultiTypeState.Range typeRange = ((ContextSensitiveMultiTypeState) s1).findTypeRange(s2.exactType());

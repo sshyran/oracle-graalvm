@@ -24,12 +24,9 @@
  */
 package com.oracle.graal.pointsto;
 
-import com.oracle.graal.pointsto.flow.InvokeTypeFlow;
-import com.oracle.graal.pointsto.meta.InvokeInfo;
 import com.oracle.graal.pointsto.typestate.MultiTypeState;
 import com.oracle.graal.pointsto.typestate.SingleTypeState;
 import com.oracle.graal.pointsto.typestate.TypeStateUtils;
-import org.graalvm.collections.EconomicMap;
 import org.graalvm.compiler.options.OptionValues;
 
 import com.oracle.graal.pointsto.api.PointstoOptions;
@@ -55,7 +52,6 @@ import jdk.vm.ci.code.BytecodePosition;
 import jdk.vm.ci.meta.JavaConstant;
 
 import java.util.BitSet;
-import java.util.stream.StreamSupport;
 
 public abstract class AnalysisPolicy {
 
@@ -188,7 +184,7 @@ public abstract class AnalysisPolicy {
     public abstract TypeState doUnion(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2);
 
     public final TypeState doIntersection(PointsToAnalysis bb, SingleTypeState s1, SingleTypeState s2) {
-        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(s2) : "Current implementation limitation.";
+        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(bb, s2) : "Current implementation limitation.";
         boolean resultCanBeNull = s1.canBeNull() && s2.canBeNull();
         if (s1.exactType().equals(s2.exactType())) {
             /* The inputs have the same type, the result will be s1. */
@@ -200,7 +196,7 @@ public abstract class AnalysisPolicy {
     }
 
     public final TypeState doIntersection(PointsToAnalysis bb, SingleTypeState s1, MultiTypeState s2) {
-        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(s2) : "Current implementation limitation.";
+        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(bb, s2) : "Current implementation limitation.";
         boolean resultCanBeNull = s1.canBeNull() && s2.canBeNull();
         if (s2.containsType(s1.exactType())) {
             return s1.forCanBeNull(bb, resultCanBeNull);
@@ -214,7 +210,7 @@ public abstract class AnalysisPolicy {
     public abstract TypeState doIntersection(PointsToAnalysis bb, MultiTypeState s1, MultiTypeState s2);
 
     public final TypeState doSubtraction(PointsToAnalysis bb, SingleTypeState s1, SingleTypeState s2) {
-        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(s2) : "Current implementation limitation.";
+        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(bb, s2) : "Current implementation limitation.";
         boolean resultCanBeNull = s1.canBeNull() && !s2.canBeNull();
         if (s1.exactType().equals(s2.exactType())) {
             return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);
@@ -224,7 +220,7 @@ public abstract class AnalysisPolicy {
     }
 
     public final TypeState doSubtraction(PointsToAnalysis bb, SingleTypeState s1, MultiTypeState s2) {
-        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(s2) : "Current implementation limitation.";
+        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(bb, s2) : "Current implementation limitation.";
         boolean resultCanBeNull = s1.canBeNull() && !s2.canBeNull();
         if (s2.containsType(s1.exactType())) {
             return TypeState.forEmpty().forCanBeNull(bb, resultCanBeNull);

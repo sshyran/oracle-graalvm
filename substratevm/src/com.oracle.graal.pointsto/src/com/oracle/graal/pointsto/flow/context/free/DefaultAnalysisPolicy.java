@@ -513,7 +513,7 @@ public class DefaultAnalysisPolicy extends AnalysisPolicy {
     @Override
     public TypeState doIntersection(PointsToAnalysis bb, MultiTypeState s1, SingleTypeState s2) {
         /* See comment above for the limitation explanation. */
-        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(s2) : "Current implementation limitation.";
+        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(bb, s2) : "Current implementation limitation.";
 
         boolean resultCanBeNull = s1.canBeNull() && s2.canBeNull();
         if (s1.containsType(s2.exactType())) {
@@ -570,7 +570,7 @@ public class DefaultAnalysisPolicy extends AnalysisPolicy {
 
     @Override
     public TypeState doSubtraction(PointsToAnalysis bb, MultiTypeState s1, SingleTypeState s2) {
-        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(s2) : "Current implementation limitation.";
+        assert !bb.extendedAsserts() || TypeStateUtils.isContextInsensitiveTypeState(bb, s2) : "Current implementation limitation.";
         boolean resultCanBeNull = s1.canBeNull() && !s2.canBeNull();
         if (s1.containsType(s2.exactType())) {
             /* s2 is contained in s1, so remove all objects of the same type from s1. */

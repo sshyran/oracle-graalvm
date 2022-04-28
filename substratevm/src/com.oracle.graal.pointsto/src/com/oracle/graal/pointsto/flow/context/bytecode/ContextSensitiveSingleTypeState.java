@@ -119,7 +119,7 @@ public class ContextSensitiveSingleTypeState extends SingleTypeState implements 
     }
 
     @Override
-    public Iterable<AnalysisObject> objects() {
+    public Iterable<AnalysisObject> objects(BigBang bb) {
         return Arrays.asList(objects);
     }
 
@@ -166,6 +166,16 @@ public class ContextSensitiveSingleTypeState extends SingleTypeState implements 
     @Override
     public boolean isMerged() {
         return merged;
+    }
+
+    @Override
+    public boolean isAllocation() {
+        return objects[0].isAllocationContextSensitiveObject();
+    }
+
+    @Override
+    public boolean isConstant() {
+        return objects[0].isConstantContextSensitiveObject();
     }
 
     @Override

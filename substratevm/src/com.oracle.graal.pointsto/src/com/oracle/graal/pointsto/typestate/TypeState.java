@@ -95,7 +95,7 @@ public abstract class TypeState {
     /** Get the number of objects. */
     public abstract int objectsCount();
 
-    public abstract Iterable<AnalysisObject> objects();
+    public abstract Iterable<AnalysisObject> objects(BigBang bb);
 
     /**
      * Provides an iterator for the objects corresponding to the type. The objects are returned from
@@ -111,29 +111,16 @@ public abstract class TypeState {
         return () -> objectsIterator(type);
     }
 
-    /** Provides a stream for the objects. */
-    public Stream<AnalysisObject> objectsStream() {
-        return StreamSupport.stream(objects().spliterator(), false);
-    }
-
     public boolean isAllocation() {
-        return objectsCount() == 1 && objectsStream().findFirst().get().isAllocationContextSensitiveObject();
+        return false;
     }
 
     public boolean isConstant() {
-        return objectsCount() == 1 && objectsStream().findFirst().get().isConstantContextSensitiveObject();
+        return false;
     }
 
     public boolean isEmpty() {
         return this == EmptyTypeState.SINGLETON;
-    }
-
-    public boolean isSingleTypeState() {
-        return this.typesCount() == 1;
-    }
-
-    public boolean isMultiTypeState() {
-        return this instanceof MultiTypeState;
     }
 
     public boolean isNull() {
@@ -227,11 +214,11 @@ public abstract class TypeState {
         return forAllocation(bb, cloneSite, type, allocationContext);
     }
 
-    public static TypeState forExactType(PointsToAnalysis bb, AnalysisType exactType, boolean canBeNull) {
+    public static SingleTypeState forExactType(PointsToAnalysis bb, AnalysisType exactType, boolean canBeNull) {
         return forExactType(bb, exactType.getContextInsensitiveAnalysisObject(), canBeNull);
     }
 
-    public static TypeState forExactType(PointsToAnalysis bb, AnalysisObject object, boolean canBeNull) {
+    public static SingleTypeState forExactType(PointsToAnalysis bb, AnalysisObject object, boolean canBeNull) {
         assert object.type().isArray() || (object.type().isInstanceClass() && !Modifier.isAbstract(object.type().getModifiers())) : object.type();
         return bb.analysisPolicy().singleTypeState(bb, canBeNull, bb.analysisPolicy().makeProperties(bb, object), object.type(), object);
     }
@@ -254,8 +241,8 @@ public abstract class TypeState {
             /* The type state is already context insensitive. */
             return state;
         } else {
-            if (state.isSingleTypeState()) {
-                AnalysisType type = state.exactType();
+            if (state instanceof SingleTypeState) {
+                AnalysisType type = ((SingleTypeState) state).exactType();
                 AnalysisObject analysisObject = type.getContextInsensitiveAnalysisObject();
                 return new SingleTypeState(bb, state.canBeNull(), bb.analysisPolicy().makeProperties(bb, analysisObject), analysisObject.type());
             } else {
@@ -425,7 +412,7 @@ final class EmptyTypeState extends TypeState {
     }
 
     @Override
-    public Iterable<AnalysisObject> objects() {
+    public Iterable<AnalysisObject> objects(BigBang bb) {
         return Collections.emptyList();
     }
 
@@ -502,7 +489,7 @@ final class NullTypeState extends TypeState {
     }
 
     @Override
-    public Iterable<AnalysisObject> objects() {
+    public Iterable<AnalysisObject> objects(BigBang bb) {
         return Collections.emptyList();
     }
 

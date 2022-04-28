@@ -31,6 +31,7 @@ import java.util.Arrays;
 import java.util.BitSet;
 import java.util.List;
 
+import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.PointsToAnalysis;
 import com.oracle.graal.pointsto.api.PointstoOptions;
 import com.oracle.graal.pointsto.flow.context.object.AnalysisObject;
@@ -337,8 +338,8 @@ public class TypeStateUtils {
      * Check if a type state contains only context insensitive objects, i.e., the only information
      * it stores is the set of types.
      */
-    public static boolean isContextInsensitiveTypeState(TypeState state) {
-        for (AnalysisObject object : state.objects()) {
+    public static boolean isContextInsensitiveTypeState(BigBang bb, TypeState state) {
+        for (AnalysisObject object : state.objects(bb)) {
             if (!object.isContextInsensitiveObject()) {
                 return false;
             }

@@ -129,18 +129,13 @@ public class ContextSensitiveMultiTypeState extends MultiTypeState implements Co
     }
 
     @Override
-    public Iterable<AnalysisObject> objects() {
+    public Iterable<AnalysisObject> objects(BigBang bb) {
         return Arrays.asList(objects);
     }
 
     @Override
     public boolean hasExactTypes(BitSet inputTypesBitSet) {
         return typesBitSet.equals(inputTypesBitSet);
-    }
-
-    @Override
-    public AnalysisType exactType() {
-        return typesCount == 1 ? objects[0].type() : null;
     }
 
     public BitSet typesBitSet() {

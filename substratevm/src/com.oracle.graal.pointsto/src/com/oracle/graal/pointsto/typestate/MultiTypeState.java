@@ -38,8 +38,7 @@ public class MultiTypeState extends TypeState {
 
     /**
      * Keep a bit set for types to easily answer queries like contains type or types count, and
-     * quickly iterate over the types. It costs us one linear pass over the objects when the state
-     * is first created but the cost is amortized for frequently used states.
+     * quickly iterate over the types.
      */
     protected final BitSet typesBitSet;
     /** Cache the number of types since BitSet.cardinality() computes it every time is called. */
@@ -48,7 +47,6 @@ public class MultiTypeState extends TypeState {
     protected final boolean canBeNull;
     /** Has this type state been merged with the all-instantiated type state? */
     protected boolean merged;
-    protected final BigBang bb;
 
     /** Creates a new type state using the provided types bit set and objects. */
     public MultiTypeState(PointsToAnalysis bb, boolean canBeNull, int properties, BitSet typesBitSet) {
@@ -72,7 +70,6 @@ public class MultiTypeState extends TypeState {
         this.typesCount = (int) cardinality;
         this.canBeNull = canBeNull;
         this.merged = false;
-        this.bb = bb;
         assert typesCount > 1 : "Multi type state with single type.";
         PointsToStats.registerTypeState(bb, this);
     }
@@ -84,7 +81,6 @@ public class MultiTypeState extends TypeState {
         this.typesCount = other.typesCount;
         this.canBeNull = canBeNull;
         this.merged = other.merged;
-        this.bb = other.bb;
         PointsToStats.registerTypeState(bb, this);
     }
 
@@ -95,7 +91,7 @@ public class MultiTypeState extends TypeState {
     }
 
     @Override
-    public Iterable<AnalysisObject> objects() {
+    public Iterable<AnalysisObject> objects(BigBang bb) {
         return () -> new Iterator<>() {
 
             /** Initialize to the index of the first set bit. */
@@ -122,7 +118,7 @@ public class MultiTypeState extends TypeState {
 
     @Override
     public AnalysisType exactType() {
-        return typesCount == 1 ? typesIterator(bb).next() : null;
+        return null;
     }
 
     @Override
