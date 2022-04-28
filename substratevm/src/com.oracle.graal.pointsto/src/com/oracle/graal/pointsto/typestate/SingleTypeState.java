@@ -42,11 +42,12 @@ public class SingleTypeState extends TypeState {
     /** Has this type state been merged with the all-instantiated type state? */
     protected boolean merged;
 
-    protected AnalysisType type;
+    protected final AnalysisType type;
 
     /** Creates a new type state from incoming objects. */
     public SingleTypeState(PointsToAnalysis bb, boolean canBeNull, int properties, AnalysisType type) {
         super(properties);
+        this.type = type;
         this.canBeNull = canBeNull;
         this.merged = false;
 
@@ -56,6 +57,7 @@ public class SingleTypeState extends TypeState {
     /** Create a type state with the same content and a reversed canBeNull value. */
     protected SingleTypeState(PointsToAnalysis bb, boolean canBeNull, SingleTypeState other) {
         super(other.properties);
+        this.type = other.type;
         this.canBeNull = canBeNull;
         this.merged = other.merged;
 
@@ -73,7 +75,7 @@ public class SingleTypeState extends TypeState {
     }
 
     @Override
-    public AnalysisType exactType() {
+    public final AnalysisType exactType() {
         return type;
     }
 

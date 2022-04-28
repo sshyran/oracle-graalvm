@@ -26,7 +26,6 @@ package com.oracle.graal.pointsto.typestate;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.BitSet;
 import java.util.Iterator;
 
 import com.oracle.graal.pointsto.BigBang;
@@ -80,11 +79,6 @@ public class ContextSensitiveSingleTypeState extends SingleTypeState {
         }
 
         return true;
-    }
-
-    @Override
-    public AnalysisType exactType() {
-        return objects[0].type();
     }
 
     @Override

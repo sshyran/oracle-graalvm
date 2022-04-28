@@ -31,6 +31,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
+import com.oracle.graal.pointsto.flow.MethodTypeFlow;
 import org.graalvm.compiler.options.OptionValues;
 
 import com.oracle.graal.pointsto.constraints.UnsupportedFeatureException;
@@ -444,10 +445,9 @@ public class DefaultAnalysisPolicy extends AnalysisPolicy {
             /* Check if any of the states has the right null state. */
             if (s1.canBeNull() == resultCanBeNull) {
                 return s1;
-            } else if (s2.canBeNull() == resultCanBeNull) {
+            } else {
                 return s2;
             }
-            throw AnalysisError.shouldNotReachHere();
         } else {
             /* The inputs have different types, so the result is a MultiTypeState. */
             /* We know the types, construct the types bit set without walking the objects. */
