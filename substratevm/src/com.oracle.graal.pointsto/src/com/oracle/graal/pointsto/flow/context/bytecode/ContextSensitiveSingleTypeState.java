@@ -36,7 +36,7 @@ import com.oracle.graal.pointsto.typestate.PointsToStats;
 import com.oracle.graal.pointsto.typestate.SingleTypeState;
 import com.oracle.graal.pointsto.typestate.TypeState;
 
-public class ContextSensitiveSingleTypeState extends SingleTypeState implements ContextSensitiveTypeState {
+public class ContextSensitiveSingleTypeState extends SingleTypeState {
     /** The objects of this type state. */
     protected final AnalysisObject[] objects;
 
@@ -111,11 +111,6 @@ public class ContextSensitiveSingleTypeState extends SingleTypeState implements 
     @Override
     public final int objectsCount() {
         return objects.length;
-    }
-
-    @Override
-    public final AnalysisObject[] objectsArray() {
-        return objects;
     }
 
     @Override

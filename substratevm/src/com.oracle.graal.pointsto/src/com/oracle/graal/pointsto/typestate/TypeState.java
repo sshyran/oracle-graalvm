@@ -242,9 +242,9 @@ public abstract class TypeState {
             return state;
         } else {
             if (state instanceof SingleTypeState) {
-                AnalysisType type = ((SingleTypeState) state).exactType();
+                AnalysisType type = state.exactType();
                 AnalysisObject analysisObject = type.getContextInsensitiveAnalysisObject();
-                return new SingleTypeState(bb, state.canBeNull(), bb.analysisPolicy().makeProperties(bb, analysisObject), analysisObject.type());
+                return bb.analysisPolicy().singleTypeState(bb, state.canBeNull(), bb.analysisPolicy().makeProperties(bb, analysisObject), analysisObject.type());
             } else {
                 MultiTypeState multiState = (MultiTypeState) state;
                 AnalysisObject[] objectsArray = new AnalysisObject[multiState.typesCount()];
@@ -260,7 +260,7 @@ public abstract class TypeState {
 
                 BitSet typesBitSet = multiState.typesBitSet;
                 int properties = bb.analysisPolicy().makeProperties(bb, objectsArray);
-                return new ContextSensitiveMultiTypeState(bb, multiState.canBeNull(), properties, typesBitSet, objectsArray);
+                return bb.analysisPolicy().multiTypeState(bb, multiState.canBeNull(), properties, typesBitSet, objectsArray);
             }
         }
     }

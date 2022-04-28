@@ -38,7 +38,7 @@ import com.oracle.graal.pointsto.typestate.PointsToStats;
 import com.oracle.graal.pointsto.typestate.TypeState;
 import com.oracle.graal.pointsto.typestate.TypeStateUtils;
 
-public class ContextSensitiveMultiTypeState extends MultiTypeState implements ContextSensitiveTypeState {
+public class ContextSensitiveMultiTypeState extends MultiTypeState {
 
     /** The objects of this type state. */
     protected final AnalysisObject[] objects;
@@ -120,12 +120,6 @@ public class ContextSensitiveMultiTypeState extends MultiTypeState implements Co
     @Override
     public int objectsCount() {
         return objects.length;
-    }
-
-    /** Returns the objects as an array. */
-    @Override
-    public final AnalysisObject[] objectsArray() {
-        return objects;
     }
 
     @Override

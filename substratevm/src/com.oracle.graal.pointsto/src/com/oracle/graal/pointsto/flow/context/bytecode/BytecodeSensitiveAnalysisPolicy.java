@@ -34,6 +34,7 @@ import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import com.oracle.graal.pointsto.util.AnalysisError;
 import org.graalvm.compiler.options.OptionValues;
 
 import com.oracle.graal.pointsto.AnalysisPolicy;
@@ -351,7 +352,7 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
             }
 
             /* Use the tandem types - objects iterator. */
-            TypesObjectsIterator toi = new TypesObjectsIterator((ContextSensitiveTypeState) receiverState);
+            TypesObjectsIterator toi = new TypesObjectsIterator(receiverState);
             while (toi.hasNextType()) {
                 AnalysisType type = toi.nextType();
 
@@ -431,13 +432,27 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
      * </code>
      */
     public static class TypesObjectsIterator {
-
-        private final ContextSensitiveTypeState state;
+        private final int typesCount;
+        private final AnalysisObject[] objects;
         private int typeIdx = 0;
         private int objectIdx = 0;
 
-        public TypesObjectsIterator(ContextSensitiveTypeState state) {
-            this.state = state;
+        public TypesObjectsIterator(TypeState state) {
+            typesCount = state.typesCount();
+            objects = objectsArray(state);
+        }
+
+        private static AnalysisObject[] objectsArray(TypeState state) {
+            if (state.isEmpty() || state.isNull()) {
+                return AnalysisObject.EMPTY_ARRAY;
+            }
+            if (state instanceof ContextSensitiveSingleTypeState) {
+                return ((ContextSensitiveSingleTypeState) state).objects;
+            }
+            if (state instanceof ContextSensitiveMultiTypeState) {
+                return ((ContextSensitiveMultiTypeState) state).objects;
+            }
+            throw AnalysisError.shouldNotReachHere();
         }
 
         /**
@@ -445,12 +460,12 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
          * type other than the current type.
          */
         public boolean hasNextType() {
-            return typeIdx < state.typesCount();
+            return typeIdx < typesCount;
         }
 
         /** Returns true if there are more objects of the current type. */
         public boolean hasNextObject(AnalysisType type) {
-            return objectIdx < state.objectsArray().length && state.objectsArray()[objectIdx].getTypeId() == type.getId();
+            return objectIdx < objects.length && objects[objectIdx].getTypeId() == type.getId();
         }
 
         /** Gets the next type. */
@@ -460,7 +475,7 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
             /* Increment the type index. */
             typeIdx++;
             /* Return the type at the 'objectIdx. */
-            return state.objectsArray()[objectIdx].type();
+            return objects[objectIdx].type();
         }
 
         /** Gets the next object. */
@@ -468,7 +483,7 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
             /* Check that there is a next object of the desired type. */
             assert hasNextObject(type);
             /* Return the next object and increment objectIdx. */
-            return state.objectsArray()[objectIdx++];
+            return objects[objectIdx++];
         }
     }
 
