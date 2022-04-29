@@ -173,6 +173,12 @@ public abstract class AnalysisPolicy {
         return 0;
     }
 
+    /**
+     * Simplifies a type state by replacing all context sensitive objects with context insensitive
+     * objects.
+     */
+    public abstract TypeState forContextInsensitiveTypeState(PointsToAnalysis bb, TypeState state);
+
     public abstract SingleTypeState singleTypeState(PointsToAnalysis bb, boolean canBeNull, int properties, AnalysisType type, AnalysisObject... objects);
 
     public abstract MultiTypeState multiTypeState(PointsToAnalysis bb, boolean canBeNull, int properties, BitSet typesBitSet, AnalysisObject... objects);

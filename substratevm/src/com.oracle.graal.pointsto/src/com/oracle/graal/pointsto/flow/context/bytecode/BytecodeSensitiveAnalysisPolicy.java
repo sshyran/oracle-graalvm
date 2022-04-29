@@ -535,6 +535,36 @@ public class BytecodeSensitiveAnalysisPolicy extends AnalysisPolicy {
     }
 
     @Override
+    public TypeState forContextInsensitiveTypeState(PointsToAnalysis bb, TypeState state) {
+        if (state.isEmpty() || state.isNull()) {
+            /* The type state is already context insensitive. */
+            return state;
+        } else {
+            if (state instanceof SingleTypeState) {
+                AnalysisType type = state.exactType();
+                AnalysisObject analysisObject = type.getContextInsensitiveAnalysisObject();
+                return singleTypeState(bb, state.canBeNull(), makeProperties(bb, analysisObject), analysisObject.type(), analysisObject);
+            } else {
+                MultiTypeState multiState = (MultiTypeState) state;
+                AnalysisObject[] objectsArray = new AnalysisObject[multiState.typesCount()];
+
+                int i = 0;
+                for (AnalysisType type : multiState.types(bb)) {
+                    objectsArray[i++] = type.getContextInsensitiveAnalysisObject();
+                }
+                /*
+                 * For types use the already created bit set. Since the original type state is
+                 * immutable its types bit set cannot change.
+                 */
+
+                BitSet typesBitSet = multiState.typesBitSet();
+                int properties = makeProperties(bb, objectsArray);
+                return multiTypeState(bb, multiState.canBeNull(), properties, typesBitSet, objectsArray);
+            }
+        }
+    }
+
+    @Override
     public SingleTypeState singleTypeState(PointsToAnalysis bb, boolean canBeNull, int properties, AnalysisType type, AnalysisObject... objects) {
         return new ContextSensitiveSingleTypeState(bb, canBeNull, properties, type, objects);
     }

@@ -422,6 +422,12 @@ public class DefaultAnalysisPolicy extends AnalysisPolicy {
     }
 
     @Override
+    public TypeState forContextInsensitiveTypeState(PointsToAnalysis bb, TypeState state) {
+        /* The type state is already context insensitive. */
+        return state;
+    }
+
+    @Override
     public SingleTypeState singleTypeState(PointsToAnalysis bb, boolean canBeNull, int properties, AnalysisType type, AnalysisObject... objects) {
         return new SingleTypeState(bb, canBeNull, properties, type);
     }

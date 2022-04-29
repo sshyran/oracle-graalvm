@@ -33,10 +33,8 @@ import java.util.stream.StreamSupport;
 
 import com.oracle.graal.pointsto.BigBang;
 import com.oracle.graal.pointsto.PointsToAnalysis;
-import com.oracle.graal.pointsto.api.PointstoOptions;
 import com.oracle.graal.pointsto.flow.context.AnalysisContext;
 import com.oracle.graal.pointsto.flow.context.BytecodeLocation;
-import com.oracle.graal.pointsto.flow.context.bytecode.ContextSensitiveMultiTypeState;
 import com.oracle.graal.pointsto.flow.context.object.AnalysisObject;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.graal.pointsto.util.BitArrayUtils;
@@ -229,40 +227,6 @@ public abstract class TypeState {
 
     public static TypeState forType(PointsToAnalysis bb, AnalysisObject object, boolean canBeNull) {
         return bb.analysisPolicy().singleTypeState(bb, canBeNull, bb.analysisPolicy().makeProperties(bb, object), object.type(), object);
-    }
-
-    /**
-     * Simplifies a type state by replacing all context sensitive objects with context insensitive
-     * objects.
-     */
-    public static TypeState forContextInsensitiveTypeState(PointsToAnalysis bb, TypeState state) {
-        if (!PointstoOptions.AllocationSiteSensitiveHeap.getValue(bb.getOptions()) ||
-                        state.isEmpty() || state.isNull()) {
-            /* The type state is already context insensitive. */
-            return state;
-        } else {
-            if (state instanceof SingleTypeState) {
-                AnalysisType type = state.exactType();
-                AnalysisObject analysisObject = type.getContextInsensitiveAnalysisObject();
-                return bb.analysisPolicy().singleTypeState(bb, state.canBeNull(), bb.analysisPolicy().makeProperties(bb, analysisObject), analysisObject.type());
-            } else {
-                MultiTypeState multiState = (MultiTypeState) state;
-                AnalysisObject[] objectsArray = new AnalysisObject[multiState.typesCount()];
-
-                int i = 0;
-                for (AnalysisType type : multiState.types(bb)) {
-                    objectsArray[i++] = type.getContextInsensitiveAnalysisObject();
-                }
-                /*
-                 * For types use the already created bit set. Since the original type state is
-                 * immutable its types bit set cannot change.
-                 */
-
-                BitSet typesBitSet = multiState.typesBitSet;
-                int properties = bb.analysisPolicy().makeProperties(bb, objectsArray);
-                return bb.analysisPolicy().multiTypeState(bb, multiState.canBeNull(), properties, typesBitSet, objectsArray);
-            }
-        }
     }
 
     public final TypeState forNonNull(PointsToAnalysis bb) {
