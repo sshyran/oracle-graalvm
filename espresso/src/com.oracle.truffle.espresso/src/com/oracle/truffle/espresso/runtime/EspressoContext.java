@@ -141,7 +141,7 @@ public final class EspressoContext {
 
     // region Runtime
     private final StringTable strings;
-    private final ClassRegistries registries;
+    private ClassRegistries registries;
     private final Substitutions substitutions;
     private final MethodHandleIntrinsics methodHandleIntrinsics;
     private final ClassHierarchyOracle classHierarchyOracle;
@@ -194,7 +194,6 @@ public final class EspressoContext {
 
     // Behavior control
     public final boolean EnableManagement;
-    public final EspressoOptions.VerifyMode Verify;
     public final boolean Polyglot;
     public final boolean HotSwapAPI;
     public final boolean ExitHost;
@@ -244,7 +243,6 @@ public final class EspressoContext {
         this.language = language;
 
         this.bootClassLoaderID = language.getNewLoaderId();
-        this.registries = new ClassRegistries(this);
         this.strings = new StringTable(this);
         this.substitutions = new Substitutions(this);
         this.methodHandleIntrinsics = new MethodHandleIntrinsics();
@@ -268,7 +266,6 @@ public final class EspressoContext {
         this.InlineFieldAccessors = JDWPOptions == null && env.getOptions().get(EspressoOptions.InlineFieldAccessors);
         this.InlineMethodHandle = JDWPOptions == null && env.getOptions().get(EspressoOptions.InlineMethodHandle);
         this.SplitMethodHandles = JDWPOptions == null && env.getOptions().get(EspressoOptions.SplitMethodHandles);
-        this.Verify = env.getOptions().get(EspressoOptions.Verify);
         this.EnableSignals = env.getOptions().get(EspressoOptions.EnableSignals);
         this.LivenessAnalysisMode = env.getOptions().get(EspressoOptions.LivenessAnalysis);
         this.LivenessAnalysisMinimumLocals = env.getOptions().get(EspressoOptions.LivenessAnalysisMinimumLocals);
@@ -489,6 +486,8 @@ public final class EspressoContext {
                 EspressoError.guarantee(getJavaVersion() != null, "Java version");
             }
 
+            this.registries = new ClassRegistries(this);
+
             if (getJavaVersion().modulesEnabled()) {
                 registries.initJavaBaseModule();
                 registries.getBootClassRegistry().initUnnamedModule(StaticObject.NULL);
@@ -498,7 +497,6 @@ public final class EspressoContext {
 
             initializeAgents();
 
-            registries.getBootClassRegistry().setBootKlassPath(getBootClasspath());
             try (DebugCloseable metaInit = META_INIT.scope(timers)) {
                 this.meta = new Meta(this);
             }
@@ -779,19 +777,6 @@ public final class EspressoContext {
             allocationReporter.onReturnValue(object, 0, AllocationReporter.SIZE_UNKNOWN);
         }
         return object;
-    }
-
-    public boolean needsVerify(StaticObject classLoader) {
-        switch (Verify) {
-            case NONE:
-                return false;
-            case REMOTE:
-                return !StaticObject.isNull(classLoader);
-            case ALL:
-                return true;
-            default:
-                return true;
-        }
     }
 
     public void prepareDispose() {

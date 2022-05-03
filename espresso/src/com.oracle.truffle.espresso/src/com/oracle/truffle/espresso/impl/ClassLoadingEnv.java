@@ -28,9 +28,7 @@ import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.UnsupportedMessageException;
 import com.oracle.truffle.espresso.EspressoLanguage;
 import com.oracle.truffle.espresso.EspressoOptions;
-import com.oracle.truffle.espresso.descriptors.Names;
 import com.oracle.truffle.espresso.descriptors.Symbol;
-import com.oracle.truffle.espresso.descriptors.Types;
 import com.oracle.truffle.espresso.meta.EspressoError;
 import com.oracle.truffle.espresso.meta.Meta;
 import com.oracle.truffle.espresso.perf.TimerCollection;
@@ -38,23 +36,11 @@ import com.oracle.truffle.espresso.runtime.EspressoContext;
 import com.oracle.truffle.espresso.runtime.JavaVersion;
 import com.oracle.truffle.espresso.runtime.StaticObject;
 
-public interface ClassLoadingEnv {
-
-    EspressoLanguage getLanguage();
-
-    Names getNames();
-
-    Types getTypes();
+public interface ClassLoadingEnv extends LanguageAccess {
 
     TimerCollection getTimers();
 
     TruffleLogger getLogger();
-
-    JavaVersion getJavaVersion();
-
-    EspressoOptions.SpecComplianceMode getSpecComplianceMode();
-
-    boolean needsVerify(StaticObject loader);
 
     boolean isLoaderBootOrPlatform(StaticObject loader);
 
@@ -79,18 +65,23 @@ public interface ClassLoadingEnv {
         }
 
         @Override
-        public Names getNames() {
-            return language.getNames();
+        public TruffleLogger getLogger() {
+            return TruffleLogger.getLogger(EspressoLanguage.ID);
         }
 
         @Override
-        public Types getTypes() {
-            return language.getTypes();
+        public JavaVersion getJavaVersion() {
+            return getLanguage().getJavaVersion();
         }
 
         @Override
         public EspressoOptions.SpecComplianceMode getSpecComplianceMode() {
             return language.getSpecComplianceMode();
+        }
+
+        @Override
+        public boolean needsVerify(StaticObject loader) {
+            return getLanguage().needsVerify(loader);
         }
     }
 
@@ -125,16 +116,6 @@ public interface ClassLoadingEnv {
         }
 
         @Override
-        public JavaVersion getJavaVersion() {
-            return getContext().getJavaVersion();
-        }
-
-        @Override
-        public boolean needsVerify(StaticObject loader) {
-            return getContext().needsVerify(loader);
-        }
-
-        @Override
         public boolean isLoaderBootOrPlatform(StaticObject loader) {
             Meta meta = getMeta();
             return StaticObject.isNull(loader) ||
@@ -164,50 +145,13 @@ public interface ClassLoadingEnv {
 
     class WithoutContext extends CommonEnv {
 
-        public static class Options {
-            private final TruffleLogger logger;
-            private boolean needsVerify;
-
-            public Options() {
-                logger = TruffleLogger.getLogger(EspressoLanguage.ID);
-                EspressoOptions.VerifyMode defaultVerifyMode = EspressoOptions.Verify.getDefaultValue();
-                needsVerify = defaultVerifyMode != EspressoOptions.VerifyMode.NONE;
-            }
-
-            public void enableVerify() {
-                this.needsVerify = true;
-            }
-        }
-
-        private final Options options;
-
         public WithoutContext(EspressoLanguage language) {
-            this(language, new Options());
-        }
-
-        public WithoutContext(EspressoLanguage language, Options opts) {
             super(language);
-            options = opts;
         }
 
         @Override
         public TimerCollection getTimers() {
             return TimerCollection.create(false);
-        }
-
-        @Override
-        public TruffleLogger getLogger() {
-            return options.logger;
-        }
-
-        @Override
-        public JavaVersion getJavaVersion() {
-            return getLanguage().getJavaVersion();
-        }
-
-        @Override
-        public boolean needsVerify(StaticObject loader) {
-            return options.needsVerify;
         }
 
         @Override
