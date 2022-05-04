@@ -1094,6 +1094,22 @@ mx_sdk_vm.register_graalvm_component(mx_sdk_vm.GraalVmJreComponent(
             jvm_library=True,
             jar_distributions=jar_distributions,
             build_args=[
+                ## Pass via JVM args opening up of packages needed for image builder early on
+                '-J--add-exports=jdk.internal.vm.compiler/org.graalvm.compiler.hotspot=ALL-UNNAMED',
+                '-J--add-exports=jdk.internal.vm.compiler/org.graalvm.compiler.options=ALL-UNNAMED',
+                '-J--add-exports=jdk.internal.vm.compiler/org.graalvm.compiler.truffle.common.hotspot=ALL-UNNAMED',
+                '-J--add-exports=jdk.internal.vm.compiler/org.graalvm.compiler.truffle.common=ALL-UNNAMED',
+                '-J--add-exports=jdk.internal.vm.compiler/org.graalvm.jniutils=ALL-UNNAMED',
+                '-J--add-exports=jdk.internal.vm.compiler/org.graalvm.libgraal.jni.annotation=ALL-UNNAMED',
+                '-J--add-exports=jdk.internal.vm.compiler/org.graalvm.libgraal.jni=ALL-UNNAMED',
+                '-J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.core.annotate=ALL-UNNAMED',
+                '-J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.core.option=ALL-UNNAMED',
+                ## Packages used after option-processing can be opened by the builder (`-J`-prefix not needed)
+                # LibGraalFeature implements com.oracle.svm.core.graal.GraalFeature (needed to be able to instantiate LibGraalFeature)
+                '--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.core.graal=ALL-UNNAMED',
+                # Make ModuleSupport accessible to do the remaining opening-up in LibGraalFeature constructor
+                '--add-exports=org.graalvm.nativeimage.base/com.oracle.svm.util=ALL-UNNAMED',
+
                 '--features=com.oracle.svm.graal.hotspot.libgraal.LibGraalFeature',
                 '--initialize-at-build-time=org.graalvm.compiler,org.graalvm.libgraal,org.graalvm.jniutils,org.graalvm.graphio,com.oracle.truffle',
                 '-H:-UseServiceLoaderFeature',
